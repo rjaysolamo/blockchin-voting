@@ -1,0 +1,243 @@
+  ## What is this system?
+
+  This is a university online voting system with:
+  - Role-based dashboards (Admin / Student / Candidate / Staff)
+  - Two voting modes:
+    - Standard “MVP” voting UI (mock data)
+    - Blockchain-style voting (Supabase + SHA-256 hashing + vote verification codes)
+  - Attendance module (events + QR check-in/check-out)
+
+  The frontend is a React + TypeScript + Vite app using shadcn/ui (Radix UI) and Tailwind. Data comes from Supabase (Auth + Postgres + Realtime) and React Query is used for caching and mutations.
+
+  ---
+
+  ## System essay (Web 2.5 approach)
+
+  This project is built as a Web 2.5 electronic voting system. It keeps the speed and usability of a traditional web app, while adding blockchain-style integrity checks as an additional security and audit layer. In practice, that means the main voting experience remains familiar and fast for students, while every vote gains a cryptographic fingerprint and a verification code that can be checked later.
+
+  Instead of replacing the full system with blockchain, the design uses a hybrid model: Supabase handles identity, roles, real-time updates, and data storage, while hashing and chain linkage provide tamper-evident proofs. This lets the system remain practical for campus deployment while still improving transparency. The result is a system that is easy for users, manageable for administrators, and verifiable for auditors.
+
+  ---
+
+  ## End-to-end flow (plain language)
+
+  1. The user opens the app and selects a role (Admin, Student, Staff).
+  2. The app signs the user in and routes them to the correct dashboard.
+  3. Students can review candidates, vote, and receive a verification code.
+  4. Each vote is stored with a hash that links to the previous vote, creating a verifiable chain.
+  5. Students can later verify their vote with the code to confirm integrity.
+  6. Admins manage elections, monitor results, and view the audit trail.
+  7. Staff scan QR codes for attendance, which updates in real time.
+
+  ---
+
+  ## Roles and what each can do
+
+  ### Admin
+  - Manage elections and view live stats/results
+  - Manage candidates and voters
+  - Control attendance events (activate/deactivate) and view attendance analytics
+  - See an audit log panel for blockchain activity (tamper-evident trail)
+
+  ### Student / Voter
+  - Standard dashboard (MVP): view candidates, vote, view results
+  - Attendance: view personal attendance history and student QR code
+  - Blockchain voting: sign in/register, cast votes, get verification codes, verify votes later
+
+  ---
+
+  ## Security & Integrity
+
+  ### Hash Scope
+  To ensure the integrity of every vote, the cryptographic hash (SHA-256) includes the following fields:
+  - `election_id`: Links the vote to a specific election
+  - `candidate_id`: The candidate being voted for
+  - `voter_id`: The unique ID of the voter (anonymized in public logs)
+  - `position`: The position being voted for
+  - `timestamp`: Precise time of the vote
+  - `previous_hash`: The hash of the previous block (creating the chain)
+  - `nonce`: A unique number for cryptographic uniqueness
+
+  ### Server-Side Validation
+  Hashes are generated and verified server-side (via Supabase Edge Functions) to ensure integrity and prevent client-side tampering. The client receives the verification code and hash only after the server has securely recorded the vote.
+
+  ---
+
+  ## Attendance security & UX
+
+  ### Tokenized QR codes (short-lived)
+  - Students receive a rotating QR token that expires every 30–60 seconds
+  - Tokens are single-use, validated server-side, and marked as consumed after scan
+  - A short manual code is shown as an offline fallback for staff entry
+
+  ### Scan protections
+  - Cooldown enforcement (30s per student) blocks rapid re-scans
+  - State guard enforces NOT_STARTED → CHECKED_IN → CHECKED_OUT
+  - Scan attempts are logged with staff user, device ID, and status
+
+  ### Manual overrides
+  - Staff can check in/out by student ID with a required reason
+  - Manual actions are written to the scan log for auditability
+
+  ---
+
+  ## Limitations (Professional Note)
+
+  While this project uses a "Web 2.5" hybrid approach suitable for a capstone, a production environment would require:
+
+  1. **Unified Authentication**: In production, the role-based routing (MVP) and Supabase authentication would be unified into a single authorization layer to prevent any potential role mismatches.
+  2. **Key Management**: A production system would require a more robust key management solution (e.g., HSM or KMS) for the server-side signing keys.
+  3. **Consensus**: A distributed consensus mechanism would be needed if multiple validation nodes were introduced.
+
+  ---
+
+  ## High-level app flow (start to finish)dashboard (profile-style view)
+
+  ### Staff
+  - Attendance staff dashboard: select an event and scan student QR codes (check-in/check-out)
+
+  ---
+
+  ## High-level app flow (start to finish)
+
+  1. User opens the app (landing)
+  2. User chooses a login type (Admin / Student / Staff) or enters blockchain student login
+  3. App authenticates:
+    - “Role auth” (MVP) is stored in the local Auth context (used by route protection)
+    - Supabase auth session is stored in the Supabase auth context (used for DB operations)
+  4. User is routed to a protected dashboard based on role
+  5. User performs actions (vote, scan attendance, manage election) which call Supabase and update UI via React Query
+
+  ---
+
+  ## Routing and access control
+
+  Routes are defined in `src/routes/AppRoutes.tsx`.
+
+  Access control happens in `src/routes/ProtectedRoute.tsx`:
+  - If not authenticated (MVP AuthContext), redirect to `/`
+  - If authenticated but role not allowed, redirect to the correct dashboard for that role
+
+  This is why every login page must set the MVP AuthContext role before navigating to a protected route.
+
+  ---
+
+  ## Authentication flow (two layers)
+
+  ### Layer A: “MVP role auth” (used by ProtectedRoute)
+  - Stored in `src/hooks/useAuth.tsx`
+  - Login pages call `login(role, credentials)` to set the current user role in memory
+  - Protected pages use this role to decide access
+
+  ### Layer B: Supabase auth (used for real data + permissions)
+  - Stored in `src/hooks/useSupabaseAuth.tsx`
+  - Provides:
+    - `user` and `session` from Supabase Auth
+    - `profile` from `profiles` table
+    - `roles` from `user_roles` table
+  - Used heavily by blockchain voting and attendance hooks/pages
+
+  Practical meaning:
+  - You can be “logged in” for routing (Layer A) while still using Supabase (Layer B) for DB access.
+  - In production, these would typically be unified, but for MVP it’s split to keep role routing simple.
+
+  ---
+
+  ## Standard voting flow (MVP mode)
+
+  This is the “classic” student voting UI using mock data:
+  1. Student logs in
+  2. Student dashboard loads candidate list (mock)
+  3. Student selects a candidate per position
+  4. UI records the selection in local state (MVP behavior)
+  5. Results page shows mock live results (MVP behavior)
+
+  This path is mainly for UI/flow demonstration and can later be wired to Supabase.
+
+  ---
+
+  ## Blockchain voting flow (Supabase-backed)
+
+  Main idea:
+  - Each vote is stored like a “block” with:
+    - `previous_hash` and `current_hash` (SHA-256)
+    - `block_number` (ordering)
+    - `verification_code` (given to the voter)
+  - This creates a tamper-evident chain: if a record is changed, verification fails.
+
+  ### A) Student login / registration
+  1. Student signs in via Supabase Auth
+  2. A student profile is read from `profiles`
+  3. User roles are read from `user_roles`
+
+  ### B) Voting
+  1. Load active election
+  2. Load candidates for that election
+  3. Student clicks “Vote” and confirms
+  4. App generates a hash for the vote block (SHA-256)
+  5. App inserts the new block into the vote blocks table
+  6. App returns a `verification_code` and shows a receipt dialog
+
+  ### C) Verifying a vote
+  1. Student enters a `verification_code`
+  2. App fetches the matching block from Supabase
+  3. App recomputes hashes and checks chain integrity
+  4. App shows verified / not verified result, plus details (hash, timestamp, block number)
+
+  ### D) Audit log
+  - The audit panel shows actions/events related to the blockchain voting system for transparency.
+
+  ---
+
+  ## Attendance flow (events + QR scanning)
+
+  ### A) Admin creates and manages events
+  1. Admin creates an event (title, date, scan type: time-in / time-out / both)
+  2. Admin can toggle `is_active` to start/stop scanning
+
+  ### B) Staff scanning (check-in/check-out)
+  1. Staff selects an event on the Staff Dashboard
+  2. Staff starts the camera scanner
+  3. Student presents a QR code
+  4. App decodes the QR content and calls:
+    - Check-in mutation (time-in) OR
+    - Check-out mutation (time-out)
+  5. Supabase `attendance` rows are inserted/updated
+  6. Realtime subscriptions refresh the attendance list
+
+  ### C) Student attendance view
+  1. Student opens Attendance page
+  2. App queries attendance rows for the current student
+  3. App joins attendance with event data and renders history
+
+  ### D) Token rotation and fallback
+  1. Student QR refreshes automatically on a short interval
+  2. Countdown ring shows time until the next refresh
+  3. Manual short code is displayed for offline entry
+
+  ### E) Scan log visibility
+  1. Staff see the last 10 scans with timestamps and status
+  2. Manual overrides appear alongside scanned entries
+
+  ---
+
+  ## Core data (Supabase tables you will see)
+
+  Auth + roles:
+  - `profiles` (student info, QR code, etc.)
+  - `user_roles` (admin/student/candidate/staff)
+
+  Blockchain voting:
+  - `elections`
+  - `candidates`
+  - `vote_blocks` (or similar “block” table)
+  - `audit_logs` (or similar audit trail table)
+  - `voter_registry` (who can vote + has_voted state)
+
+  Attendance:
+  - `events`
+  - `attendance`
+  - `attendance_qr_tokens`
+  - `attendance_scan_logs`
+
+  ---

@@ -1,0 +1,56 @@
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  460.9MB
+Step 1/17 : FROM rust:alpine AS builder
+ ---> 78c4bd4b95d7
+Step 2/17 : RUN apk add --no-cache musl-dev
+ ---> Using cache
+ ---> 02846f174690
+Step 3/17 : WORKDIR /app
+ ---> Using cache
+ ---> 4760dcd699f7
+Step 4/17 : COPY Cargo.toml Cargo.lock* ./
+ ---> Using cache
+ ---> cc2789d05e85
+Step 5/17 : RUN mkdir src && echo "fn main() {}" > src/main.rs
+ ---> Using cache
+ ---> 94e4e852c58e
+Step 6/17 : RUN cargo build --release
+ ---> Using cache
+ ---> 5722a9a1cddd
+Step 7/17 : RUN rm src/main.rs
+ ---> Using cache
+ ---> 34940ee7537e
+Step 8/17 : COPY src ./src
+ ---> Using cache
+ ---> a8d8cdbf8957
+Step 9/17 : RUN touch src/main.rs && cargo build --release
+ ---> Using cache
+ ---> 9d883ba30870
+Step 10/17 : FROM alpine:3.19
+ ---> 83b2b6703a62
+Step 11/17 : RUN apk add --no-cache ca-certificates
+ ---> Using cache
+ ---> 78e633ef79c4
+Step 12/17 : WORKDIR /app
+ ---> Using cache
+ ---> d2d3738aab4c
+Step 13/17 : COPY --from=builder /app/target/release/voting-crypto-service .
+ ---> Using cache
+ ---> 3e3ca91d8cd0
+Step 14/17 : ENV PORT=8080
+ ---> Using cache
+ ---> 1aec5f5624aa
+Step 15/17 : ENV RUST_LOG=info
+ ---> Using cache
+ ---> 76f9ebabb63a
+Step 16/17 : EXPOSE 8080
+ ---> Using cache
+ ---> 92dbb153a1c0
+Step 17/17 : CMD ["./voting-crypto-service"]
+ ---> Using cache
+ ---> 7a4dd93c0697
+Successfully built 7a4dd93c0697
+Successfully tagged voting-crypto:latest

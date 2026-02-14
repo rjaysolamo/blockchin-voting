@@ -1,0 +1,7 @@
+project_id = "gdgdyeaoajungjcxirds"
+
+[functions.vote]
+verify_jwt = false
+
+[functions.verify-chain]
+verify_jwt = false

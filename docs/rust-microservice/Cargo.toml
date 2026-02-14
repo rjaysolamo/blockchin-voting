@@ -1,0 +1,40 @@
+[package]
+name = "voting-crypto-service"
+version = "1.0.0"
+edition = "2021"
+authors = ["Your Team"]
+description = "High-performance cryptographic operations for blockchain voting"
+
+[dependencies]
+# Web framework
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Cryptography
+sha2 = "0.10"
+rand = "0.8"
+hex = "0.4"
+
+# Parallel processing
+rayon = "1.8"
+
+# Logging & Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
