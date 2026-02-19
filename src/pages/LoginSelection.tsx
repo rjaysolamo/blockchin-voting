@@ -12,7 +12,7 @@ const LoginSelection = () => {
           <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
             <Shield className="w-8 h-8 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">Web 2.5 Voting System</h1>
+          <h1 className="text-2xl font-bold text-foreground mb-2">Blockchain Voting System</h1>
           <p className="text-muted-foreground">
             Secure, transparent elections with blockchain as an additional security layer
           </p>

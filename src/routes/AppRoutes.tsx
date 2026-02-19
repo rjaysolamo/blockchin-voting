@@ -23,7 +23,7 @@ import VerifyVote from '@/pages/VerifyVote';
 // Blockchain voting pages
 import BlockchainStudentLogin from '@/pages/student/BlockchainStudentLogin';
 import StudentRegister from '@/pages/student/StudentRegister';
-import BlockchainVotingDashboard from '@/pages/student/BlockchainVotingDashboard';
+import BlockchainVotingDashboard from '@/pages/student/BlockchainVotingDashboardWithWallet';
 
 // Attendance pages
 import AttendanceEventsPage from '@/pages/attendance/AttendanceEventsPage';
