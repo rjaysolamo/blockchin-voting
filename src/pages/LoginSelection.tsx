@@ -59,7 +59,7 @@ const LoginSelection = () => {
         </div>
 
         <p className="mt-8 text-sm text-muted-foreground">
-          © 2026 University Election Commission
+          © {new Date().getFullYear()} Blockchain Voting System
         </p>
       </div>
     </div>

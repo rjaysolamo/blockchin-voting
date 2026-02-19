@@ -9,34 +9,7 @@ type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type AttendanceRow = Database['public']['Tables']['attendance']['Row'];
 type EventRow = Database['public']['Tables']['events']['Row'];
 
-// Mock event storage for MVP/Offline mode
-const MOCK_EVENTS_KEY = 'mvp_mock_events';
 
-function getMockEvents(): Event[] {
-  try {
-    const stored = localStorage.getItem(MOCK_EVENTS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-function addMockEvent(event: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'created_by'>): Event {
-  const newEvent: Event = {
-    ...event,
-    id: `mock-${Date.now()}`,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    created_by: 'mvp-user',
-    election_id: event.election_id ?? null,
-    scan_type: event.scan_type ?? 'both',
-    late_threshold_minutes: event.late_threshold_minutes ?? 15,
-  };
-  
-  const events = getMockEvents();
-  localStorage.setItem(MOCK_EVENTS_KEY, JSON.stringify([newEvent, ...events]));
-  return newEvent;
-}
 
 // Fetch all events
 export function useEvents() {
@@ -49,14 +22,10 @@ export function useEvents() {
         .order('event_date', { ascending: false });
 
       if (error) {
-        console.warn('Fetching events failed, falling back to local storage', error);
-        return getMockEvents();
+        throw error;
       }
       
-      const mockEvents = getMockEvents();
-      return [...(data as Event[]), ...mockEvents].sort((a, b) => 
-        new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
-      );
+      return data as Event[];
     },
   });
 }
@@ -73,13 +42,10 @@ export function useActiveEvents() {
         .order('event_date', { ascending: false });
 
       if (error) {
-        return getMockEvents().filter(e => e.is_active);
+        throw error;
       }
       
-      const mockEvents = getMockEvents().filter(e => e.is_active);
-      return [...(data as Event[]), ...mockEvents].sort((a, b) => 
-        new Date(b.event_date).getTime() - new Date(a.event_date).getTime()
-      );
+      return data as Event[];
     },
   });
 }
@@ -224,17 +190,18 @@ export function useCreateEvent() {
 
   return useMutation({
     mutationFn: async (event: Omit<Event, 'id' | 'created_at' | 'updated_at' | 'created_by'>) => {
-      if (user) {
-        const { data, error } = await supabase
-          .from('events')
-          .insert({ ...event, created_by: user.id })
-          .select()
-          .single();
-
-        if (!error) return data;
-        console.warn('Supabase insert failed, falling back to mock:', error);
+      if (!user) {
+        throw new Error('User must be authenticated to create events');
       }
-      return addMockEvent(event);
+      
+      const { data, error } = await supabase
+        .from('events')
+        .insert({ ...event, created_by: user.id })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });

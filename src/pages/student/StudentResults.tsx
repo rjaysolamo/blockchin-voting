@@ -1,13 +1,54 @@
-import { mockCandidates, mockStats } from '@/api/mockData';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/templates/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, Users, Vote } from 'lucide-react';
+import { getCandidates, getElectionStats } from '@/api';
+import { Candidate, ElectionStats } from '@/@types';
 
 const StudentResults = () => {
-  const positions = [...new Set(mockCandidates.map((c) => c.position))];
-  const totalVotesCast = mockStats.votesCast;
-  const participationRate = Math.round((totalVotesCast / mockStats.totalVoters) * 100);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [stats, setStats] = useState<ElectionStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [candidatesResponse, statsResponse] = await Promise.all([
+          getCandidates(),
+          getElectionStats()
+        ]);
+
+        if (candidatesResponse.success) {
+          setCandidates(candidatesResponse.data);
+        }
+
+        if (statsResponse.success) {
+          setStats(statsResponse.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Live Results" subtitle="Real-time election updates">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const positions = [...new Set(candidates.map((c) => c.position))];
+  const totalVotesCast = stats?.votesCast || 0;
+  const participationRate = Math.round((totalVotesCast / (stats?.totalVoters || 1)) * 100);
 
   return (
     <DashboardLayout title="Live Results" subtitle="Real-time election updates">
@@ -46,11 +87,11 @@ const StudentResults = () => {
 
       <div className="space-y-6">
         {positions.map((position) => {
-          const candidates = mockCandidates
+          const candidatesForPosition = candidates
             .filter((c) => c.position === position)
             .sort((a, b) => b.voteCount - a.voteCount);
-          const totalPositionVotes = candidates.reduce((sum, c) => sum + c.voteCount, 0);
-          const leader = candidates[0];
+          const totalPositionVotes = candidatesForPosition.reduce((sum, c) => sum + c.voteCount, 0);
+          const leader = candidatesForPosition[0];
 
           return (
             <Card key={position}>

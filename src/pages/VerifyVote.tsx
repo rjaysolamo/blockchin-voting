@@ -7,7 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { generateVoteHash, verifyChainIntegrity, formatHashForDisplay } from '@/lib/blockchain';
 import { CheckCircle2, Hash, Clock, Shield, XCircle, Download, Calendar, Info } from 'lucide-react';
-import { mockStats } from '@/api/mockData';
 
 type VoteRecord = {
   block_number: number;
@@ -216,15 +215,15 @@ const VerifyVote = () => {
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex items-center justify-between">
                   <span>Start</span>
-                  <span>{new Date(mockStats.startDate).toLocaleString()}</span>
+                  <span>To be announced</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>End</span>
-                  <span>{new Date(mockStats.endDate).toLocaleString()}</span>
+                  <span>To be announced</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Status</span>
-                  <span className="font-medium text-foreground">{mockStats.electionStatus}</span>
+                  <span className="font-medium text-foreground">Not started</span>
                 </div>
                 <div className="pt-2 text-xs text-muted-foreground">
                   Rules: One vote per position, verification codes are private, and results are published after close.

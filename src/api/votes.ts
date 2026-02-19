@@ -1,37 +1,60 @@
 import { ApiResponse, ElectionStats } from '@/@types';
-import { mockStats } from './mockData';
 
 /**
  * Submit a vote for a candidate
- * In production, this would make an API call to the backend
  */
 export async function submitVote(
   candidateId: string,
   position: string
 ): Promise<ApiResponse<{ voteId: string }>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  // In production, this would validate and record the vote
-  return {
-    success: true,
-    data: {
-      voteId: `vote_${Date.now()}`,
-    },
-  };
+  try {
+    const response = await fetch('/api/votes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ candidateId, position }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to submit vote',
+    };
+  }
 }
 
 /**
  * Get election statistics
  */
 export async function getElectionStats(): Promise<ApiResponse<ElectionStats>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
-  return {
-    success: true,
-    data: mockStats,
-  };
+  try {
+    const response = await fetch('/api/election/stats');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch election statistics',
+    };
+  }
 }
 
 /**
@@ -40,14 +63,22 @@ export async function getElectionStats(): Promise<ApiResponse<ElectionStats>> {
 export async function checkVoteStatus(
   userId: string
 ): Promise<ApiResponse<{ hasVoted: boolean; votedPositions: string[] }>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  return {
-    success: true,
-    data: {
-      hasVoted: false,
-      votedPositions: [],
-    },
-  };
+  try {
+    const response = await fetch(`/api/votes/status?userId=${encodeURIComponent(userId)}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to check vote status',
+    };
+  }
 }

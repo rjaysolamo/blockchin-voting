@@ -1,34 +1,68 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, GraduationCap, Target, Award, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { mockCandidates } from '@/api/mockData';
+import { getCandidates } from '@/api/candidates';
 import { Candidate } from '@/@types';
 import DashboardLayout from '@/templates/DashboardLayout';
+import { useToast } from '@/hooks/use-toast';
 
 const CandidateComparePage = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [leftCandidateId, setLeftCandidateId] = useState<string>('');
   const [rightCandidateId, setRightCandidateId] = useState<string>('');
   const [majorFilter, setMajorFilter] = useState<string>('all');
   const [yearFilter, setYearFilter] = useState<string>('all');
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const positions = useMemo(() => [...new Set(mockCandidates.map(c => c.position))], []);
-  const majors = useMemo(() => [...new Set(mockCandidates.map(c => c.major).filter(Boolean))], []);
-  const years = useMemo(() => [...new Set(mockCandidates.map(c => c.year).filter(Boolean))], []);
+  const positions = useMemo(() => [...new Set(candidates.map(c => c.position))], [candidates]);
+  const majors = useMemo(() => [...new Set(candidates.map(c => c.major).filter(Boolean))], [candidates]);
+  const years = useMemo(() => [...new Set(candidates.map(c => c.year).filter(Boolean))], [candidates]);
 
   const filteredCandidates = useMemo(() => {
-    return mockCandidates.filter((candidate) => {
+    return candidates.filter((candidate) => {
       const matchesMajor = majorFilter === 'all' || candidate.major === majorFilter;
       const matchesYear = yearFilter === 'all' || candidate.year === yearFilter;
       return matchesMajor && matchesYear;
     });
-  }, [majorFilter, yearFilter]);
+  }, [candidates, majorFilter, yearFilter]);
   
-  const leftCandidate = mockCandidates.find(c => c.id === leftCandidateId);
-  const rightCandidate = mockCandidates.find(c => c.id === rightCandidateId);
+  const leftCandidate = candidates.find(c => c.id === leftCandidateId);
+  const rightCandidate = candidates.find(c => c.id === rightCandidateId);
+
+  // Fetch candidates data
+  useEffect(() => {
+    const fetchCandidates = async () => {
+      try {
+        setIsLoading(true);
+        const response = await getCandidates();
+        
+        if (response.success) {
+          setCandidates(response.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to fetch candidates',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch candidates data',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCandidates();
+  }, [toast]);
 
   const CandidateColumn = ({ 
     candidate, 

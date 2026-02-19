@@ -9,7 +9,7 @@ import {
   Blocks
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/features/auth/hooks/useMockAuth';
+import { useAuth } from '@/hooks/useAuth';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/admin/dashboard' },

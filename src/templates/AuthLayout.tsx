@@ -11,7 +11,7 @@ const AuthLayout = ({ children }: AuthLayoutProps) => {
       <div className="w-full max-w-md">
         {children}
         <p className="mt-8 text-center text-sm text-muted-foreground">
-          © 2026 University Election Commission
+          © {new Date().getFullYear()} Blockchain Voting System
         </p>
       </div>
     </div>

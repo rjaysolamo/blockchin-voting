@@ -1,8 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, CheckCircle2, Clock } from 'lucide-react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import { Input } from '@/components/ui/input';
-import { mockVoters } from '@/api/mockData';
+import { API_BASE_URL } from '@/lib/constants';
+
+export const getVoters = async () => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/voters`);
+    return { success: true, data: response.data };
+  } catch (error: any) {
+    return { success: false, error: error.response?.data?.message || error.message };
+  }
+};
+import { useToast } from '@/hooks/use-toast';
 import {
   Table,
   TableBody,
@@ -20,10 +30,13 @@ import {
 } from '@/components/ui/select';
 
 const AdminVoters = () => {
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [voters, setVoters] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filteredVoters = mockVoters.filter((voter) => {
+  const filteredVoters = voters.filter((voter) => {
     const matchesSearch =
       voter.name.toLowerCase().includes(search.toLowerCase()) ||
       voter.studentId.toLowerCase().includes(search.toLowerCase()) ||
@@ -36,6 +49,36 @@ const AdminVoters = () => {
 
     return matchesSearch && matchesFilter;
   });
+
+  // Fetch voters data
+  useEffect(() => {
+    const fetchVoters = async () => {
+      try {
+        setIsLoading(true);
+        const response = await getVoters();
+        
+        if (response.success) {
+          setVoters(response.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to fetch voters',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch voters data',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchVoters();
+  }, [toast]);
 
   return (
     <div className="min-h-screen flex bg-background">

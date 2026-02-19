@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
-import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, QrCode } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,7 +11,6 @@ import { supabase } from '@/integrations/supabase/client';
 const StaffLogin = () => {
   const navigate = useNavigate();
   const { signIn } = useSupabaseAuth();
-  const { login: mockLogin } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,8 +19,6 @@ const StaffLogin = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
-  const mvpStaffEmail = 'staff@university.edu';
-  const mvpStaffPassword = 'staff1234';
 
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
@@ -45,18 +41,6 @@ const StaffLogin = () => {
     setIsLoading(true);
 
     const trimmedEmail = email.trim();
-    
-    // Check for MVP fallback first (bypass email validation)
-    if (trimmedEmail === 'staff@university.edu' && password === 'staff1234') {
-      mockLogin('staff', { email: trimmedEmail, password });
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the attendance scanner (MVP Mode)',
-      });
-      navigate('/staff/dashboard');
-      setIsLoading(false);
-      return;
-    }
 
     if (!trimmedEmail.includes('@')) {
       toast({
@@ -70,7 +54,6 @@ const StaffLogin = () => {
 
     const { error } = await signIn(trimmedEmail, password);
     if (!error) {
-      mockLogin('staff', { email: trimmedEmail, password });
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData.user?.id;
       if (userId) {
@@ -95,20 +78,11 @@ const StaffLogin = () => {
       });
       navigate('/staff/dashboard');
     } else {
-      if (trimmedEmail.toLowerCase() === mvpStaffEmail && password === mvpStaffPassword) {
-        mockLogin('staff', { email: trimmedEmail, password });
-        toast({
-          title: 'Login successful',
-          description: 'Welcome to the attendance scanner',
-        });
-        navigate('/staff/dashboard');
-      } else {
-        toast({
-          title: 'Login failed',
-          description: error.message || 'Invalid credentials',
-          variant: 'destructive',
-        });
-      }
+      toast({
+        title: 'Login failed',
+        description: error.message || 'Invalid credentials',
+        variant: 'destructive',
+      });
     }
     
     setIsLoading(false);

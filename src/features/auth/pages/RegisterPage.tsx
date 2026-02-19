@@ -171,6 +171,7 @@ const RegisterPage = () => {
               placeholder="At least 6 characters"
               value={formData.password}
               onChange={handleChange}
+              autoComplete="new-password"
               required
             />
           </div>
@@ -184,6 +185,7 @@ const RegisterPage = () => {
               placeholder="Confirm your password"
               value={formData.confirmPassword}
               onChange={handleChange}
+              autoComplete="new-password"
               required
             />
           </div>
