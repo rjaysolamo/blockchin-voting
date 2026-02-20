@@ -32,10 +32,20 @@ const LoginSelection = () => {
             size="lg"
             variant="outline"
             className="w-full"
-            onClick={() => navigate('/login/student')}
+            onClick={() => navigate('/student/login')}
           >
             <Users className="w-5 h-5" />
             Login as Student / Voter
+          </Button>
+
+          <Button
+            size="lg"
+            variant="secondary"
+            className="w-full"
+            onClick={() => navigate('/student/register')}
+          >
+            <Users className="w-5 h-5" />
+            Register as Student / Voter
           </Button>
 
           <Button

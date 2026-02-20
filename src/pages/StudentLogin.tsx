@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -91,6 +91,15 @@ const StudentLogin = () => {
             {isLoading ? 'Signing in...' : 'Login'}
           </Button>
         </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-muted-foreground">
+            Don't have an account?{' '}
+            <Link to="/student/register" className="text-primary hover:underline">
+              Register here
+            </Link>
+          </p>
+        </div>
 
         <p className="mt-6 text-xs text-center text-muted-foreground">
           Each student can vote only once. Your vote is confidential.
