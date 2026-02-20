@@ -128,6 +128,20 @@ export function useSmartWallet(): UseSmartWalletReturn {
     }
   }, [user?.email, state.isConnected, state.isLoading, connectSmartWallet]);
 
+  // Add function to get stored wallet address from profile
+  const getStoredWalletAddress = useCallback(async (): Promise<string | null> => {
+    if (!user?.id) return null;
+    
+    try {
+      // In a real implementation, you would fetch this from your API
+      // For now, we'll continue using the deterministic generation
+      const wallet = generateWalletFromEmail(user.email!);
+      return wallet.address;
+    } catch {
+      return null;
+    }
+  }, [user?.id, user?.email, generateWalletFromEmail]);
+
   return {
     state,
     connectSmartWallet,

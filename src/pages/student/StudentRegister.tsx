@@ -7,6 +7,7 @@ import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Blocks, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { generateSimpleWalletAddress } from '@/lib/walletGenerator';
 
 const StudentRegister = () => {
   const navigate = useNavigate();
@@ -59,12 +60,16 @@ const StudentRegister = () => {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
-        // Create profile
+        // Generate automatic wallet address for the user
+        const walletAddress = generateSimpleWalletAddress(formData.email);
+        
+        // Create profile with automatically assigned wallet address
         await supabase.from('profiles').insert({
           user_id: user.id,
           full_name: formData.fullName,
           student_id: formData.studentId,
           department: formData.department,
+          wallet_address: walletAddress.address,
         });
 
         // Assign student role
@@ -72,12 +77,12 @@ const StudentRegister = () => {
           user_id: user.id,
           role: 'student',
         });
-      }
 
-      toast({
-        title: 'Registration successful',
-        description: 'Welcome to the blockchain voting system!',
-      });
+        toast({
+          title: 'Registration successful',
+          description: `Welcome to the blockchain voting system! Your wallet address ${walletAddress.address} has been automatically assigned.`,
+        });
+      }
       navigate('/student/blockchain-voting');
     } else {
       toast({
