@@ -1,0 +1,98 @@
+flowchart TD
+    %% Main Repository Structure
+    Root["Blockchain Voting System Repository"]
+    
+    %% Main Directories
+    subgraph RootStructure
+        Contracts["📄 contracts/"]
+        Src["📁 src/"]
+        Docs["📚 docs/"]
+        Config["⚙️ Configuration Files"]
+    end
+    
+    %% Contracts Section
+    subgraph ContractsSection [Smart Contracts]
+        VotingContract["📄 BlockchainVoting.sol"]
+        VotingContract --> ElectionStruct["🗳️ Election Struct"]
+        VotingContract --> CandidateStruct["👥 Candidate Struct"]
+        VotingContract --> VoteStruct["🗳️ Vote Struct"]
+        VotingContract --> Security["🔒 Security Features"]
+    end
+    
+    %% Source Code Structure
+    subgraph SourceCode [Frontend Application]
+        App["📄 App.tsx"]
+        Main["📄 main.tsx"]
+        
+        subgraph PagesSection [Pages]
+            AdminPages["👨‍💼 Admin Pages"]
+            StudentPages["🎓 Student Pages"]
+            StaffPages["👨‍🏫 Staff Pages"]
+            AuthPages["🔐 Auth Pages"]
+        end
+        
+        subgraph FeaturesSection [Features]
+            Voting["🗳️ Voting Feature"]
+            Blockchain["🔗 Blockchain Integration"]
+            Attendance["📊 Attendance System"]
+            Auth["🔐 Authentication"]
+            Admin["👨‍💼 Admin Dashboard"]
+        end
+        
+        subgraph ComponentsSection [Components]
+            UI["🎨 UI Components"]
+            BlockchainComps["🔗 Blockchain Components"]
+            StudentComps["🎓 Student Components"]
+            AdminComps["👨‍💼 Admin Components"]
+        end
+        
+        subgraph HooksSection [Custom Hooks]
+            AuthHooks["🔐 Auth Hooks"]
+            BlockchainHooks["🔗 Blockchain Hooks"]
+            VotingHooks["🗳️ Voting Hooks"]
+            AdminHooks["👨‍💼 Admin Hooks"]
+        end
+        
+        subgraph UtilsSection [Utilities]
+            API["🌐 API Integration"]
+            Validators["✅ Form Validators"]
+            Formatters["🔧 Data Formatters"]
+            Themes["🎨 Theme System"]
+        end
+    end
+    
+    %% External Integrations
+    subgraph Integrations [External Integrations]
+        Supabase["🗄️ Supabase Database"]
+        EthersJS["🔗 Ethers.js"]
+        ReactQuery["🔄 TanStack Query"]
+        ReactRouter["🛣️ React Router"]
+    end
+    
+    %% Relationships
+    Root --> Contracts
+    Root --> Src
+    Root --> Docs
+    Root --> Config
+    
+    Contracts --> VotingContract
+    
+    Src --> App
+    Src --> Main
+    Src --> PagesSection
+    Src --> FeaturesSection
+    Src --> ComponentsSection
+    Src --> HooksSection
+    Src --> UtilsSection
+    
+    App --> Integrations
+    
+    %% Styling
+    classDef default fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef contract fill:#f3e5f5,stroke:#7b1fa2
+    classDef feature fill:#e8f5e8,stroke:#2e7d32
+    classDef integration fill:#fff3e0,stroke:#ef6c00
+    
+    class ContractsSection, VotingContract contract
+    class FeaturesSection, PagesSection feature
+    class Integrations integration

@@ -14,8 +14,7 @@ const LoginSelection = () => {
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2">Blockchain Voting System</h1>
           <p className="text-muted-foreground">
-            Secure, transparent elections with blockchain as an additional security layer
-          </p>
+Secure, transparent, and tamper-resistant elections powered by blockchain as an additional layer of security and trust.          </p>
         </div>
 
         <div className="space-y-4">

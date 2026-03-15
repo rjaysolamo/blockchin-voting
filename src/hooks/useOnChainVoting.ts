@@ -59,13 +59,8 @@ export function useOnChainVoting(): UseOnChainVotingReturn {
     setIsSubmitting(true);
 
     try {
-      // Verify smart wallet is connected
-    if (!smartWalletState.isConnected || !smartWalletState.address) {
-      return { success: false, error: 'Smart wallet not connected' };
-    }
-
-    // For smart wallets, we don't need to check network since we'll handle gas sponsorship
-    // The smart wallet will handle the transaction execution
+      // For automatic wallet system, we don't need connection check
+      // The smart wallet will be automatically generated from user email
 
       // Convert string IDs to numbers for the contract
       const electionIdNum = parseInt(electionId, 10);

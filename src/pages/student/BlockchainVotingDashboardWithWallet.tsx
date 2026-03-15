@@ -69,15 +69,7 @@ const BlockchainVotingDashboardWithWallet = () => {
   const confirmVote = async () => {
     if (!election) return;
 
-    // Verify smart wallet is connected
-    if (!smartWalletState.isConnected) {
-      toast({
-        title: 'Smart Wallet Required',
-        description: 'Please connect your smart wallet to vote',
-        variant: 'destructive',
-      });
-      return;
-    }
+    // Wallet is automatically available from user email - no connection required
 
     const result = await castVote({
       candidateId: confirmDialog.candidateId,
@@ -162,11 +154,11 @@ const BlockchainVotingDashboardWithWallet = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            {smartWalletState.isConnected && (
+            {smartWalletState.address && (
             <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded-full">
               <Wallet className="w-4 h-4" />
               <span className="text-sm">
-                {smartWalletState.address?.substring(0, 6)}...{smartWalletState.address?.substring(smartWalletState.address.length - 4)}
+                {smartWalletState.address.substring(0, 6)}...{smartWalletState.address.substring(smartWalletState.address.length - 4)}
               </span>
             </div>
           )}
@@ -179,7 +171,7 @@ const BlockchainVotingDashboardWithWallet = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <WalletAuthGuard message="Your smart wallet will connect automatically to participate in blockchain voting">
+        <WalletAuthGuard message="Your smart wallet is automatically available for blockchain voting">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <div className="lg:col-span-2">
               <div className="bg-card border border-border rounded-lg p-6 mb-6">

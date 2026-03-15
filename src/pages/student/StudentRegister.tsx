@@ -50,40 +50,25 @@ const StudentRegister = () => {
 
     setIsLoading(true);
 
+    // Include all user metadata in the signup call
     const { error } = await signUp(formData.email, formData.password, {
       full_name: formData.fullName,
       student_id: formData.studentId,
+      department: formData.department,
     });
     
     if (!error) {
-      // Get the user after signup
-      const { data: { user } } = await supabase.auth.getUser();
+      // Generate automatic wallet address for the user
+      const walletAddress = generateSimpleWalletAddress(formData.email);
       
-      if (user) {
-        // Generate automatic wallet address for the user
-        const walletAddress = generateSimpleWalletAddress(formData.email);
-        
-        // Create profile with automatically assigned wallet address
-        await supabase.from('profiles').insert({
-          user_id: user.id,
-          full_name: formData.fullName,
-          student_id: formData.studentId,
-          department: formData.department,
-          wallet_address: walletAddress.address,
-        });
-
-        // Assign student role
-        await supabase.from('user_roles').insert({
-          user_id: user.id,
-          role: 'student',
-        });
-
-        toast({
-          title: 'Registration successful',
-          description: `Welcome to the blockchain voting system! Your wallet address ${walletAddress.address} has been automatically assigned.`,
-        });
-      }
-      navigate('/student/blockchain-voting');
+      toast({
+        title: 'Registration successful',
+        description: `Welcome to the blockchain voting system! Check your email to confirm your account. Your wallet address ${walletAddress.address} will be automatically assigned.`,
+      });
+      
+      // Navigate to login page instead of directly to voting
+      // The profile and role assignment will be handled by a database trigger or backend function
+      navigate('/student/login');
     } else {
       toast({
         title: 'Registration failed',

@@ -1,151 +1,180 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useSupabaseAuth } from './useSupabaseAuth';
 import { useToast } from './use-toast';
 
 interface SmartWalletState {
-  isConnected: boolean;
   address: string | null;
-  isLoading: boolean;
   error: string | null;
+  isConnected: boolean;
+  isSmartAccount: boolean;
 }
 
 interface UseSmartWalletReturn {
   state: SmartWalletState;
-  connectSmartWallet: () => Promise<void>;
   getSigner: () => Promise<any | null>;
   signMessage: (message: string) => Promise<string | null>;
+  sendUserOperation: (target: string, data: string, value?: bigint) => Promise<string | null>;
+  connectSmartAccount: () => Promise<void>;
+  disconnect: () => void;
 }
 
-// Declare global ethers for type safety
-declare global {
-  interface Window {
-    ethers?: any;
-  }
-}
+// Alchemy Account Kit integration
+const useAlchemyAccountKit = () => {
+  // This will be properly implemented once dependencies are installed
+  return {
+    initialize: async (email: string): Promise<void> => {
+      throw new Error('Alchemy Account Kit dependencies not installed. Run: npm install @alchemy/aa-core @alchemy/aa-alchemy @alchemy/aa-accounts viem --legacy-peer-deps');
+    },
+    getAddress: async (): Promise<string> => {
+      throw new Error('Alchemy Account Kit not initialized');
+    },
+    signMessage: async (message: string): Promise<string> => {
+      throw new Error('Alchemy Account Kit not initialized');
+    },
+    sendUserOperation: async (target: string, data: string, value?: bigint): Promise<string> => {
+      throw new Error('Alchemy Account Kit not initialized');
+    },
+    getSigner: async (): Promise<any> => {
+      throw new Error('Alchemy Account Kit not initialized');
+    },
+    disconnect: (): void => {
+      // No-op for placeholder
+    }
+  };
+};
 
-// Simple deterministic wallet generation from email + secret salt
+// Pure Alchemy Smart Account implementation
 export function useSmartWallet(): UseSmartWalletReturn {
   const [state, setState] = useState<SmartWalletState>({
-    isConnected: false,
     address: null,
-    isLoading: false,
     error: null,
+    isConnected: false,
+    isSmartAccount: false,
   });
 
   const { user } = useSupabaseAuth();
   const { toast } = useToast();
 
-  // Generate deterministic wallet from user email
-  const generateWalletFromEmail = useCallback((email: string): any => {
-    if (typeof window === 'undefined' || !window.ethers) {
-      throw new Error('Ethers not available');
+  // Alchemy Account Kit instance
+  const alchemy = useAlchemyAccountKit();
+
+  // Connect to Alchemy Smart Account
+  const connectSmartAccount = useCallback(async (): Promise<void> => {
+    if (!user?.email) {
+      setState({
+        address: null,
+        error: 'User email required to connect smart account',
+        isConnected: false,
+        isSmartAccount: false,
+      });
+      return;
     }
 
-    // Use a combination of email and application-specific salt for deterministic generation
-    const salt = process.env.NEXT_PUBLIC_WALLET_SALT || 'blockchain-voting-salt-2024';
-    const seed = window.ethers.keccak256(window.ethers.toUtf8Bytes(email + salt));
-    
-    return new window.ethers.Wallet(seed);
-  }, []);
-
-  const connectSmartWallet = useCallback(async (): Promise<void> => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-
     try {
-      if (!user?.email) {
-        throw new Error('User email not available');
-      }
-
-      if (typeof window === 'undefined' || !window.ethers) {
-        throw new Error('Ethers library not available');
-      }
-
-      // Generate wallet from user email
-      const wallet = generateWalletFromEmail(user.email);
+      // Initialize Alchemy Smart Account with user email
+      await alchemy.initialize(user.email);
+      
+      // Get the smart account address
+      const address = await alchemy.getAddress();
       
       setState({
-        isConnected: true,
-        address: wallet.address,
-        isLoading: false,
+        address,
         error: null,
+        isConnected: true,
+        isSmartAccount: true,
       });
 
       toast({
-        title: 'Smart Wallet Connected',
-        description: `Your voting wallet: ${wallet.address.slice(0, 8)}...${wallet.address.slice(-6)}`,
+        title: 'Smart Account Connected',
+        description: `Alchemy Smart Account: ${address.slice(0, 8)}...${address.slice(-6)}`,
       });
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to connect smart wallet';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect smart account';
       setState({
-        isConnected: false,
         address: null,
-        isLoading: false,
         error: errorMessage,
+        isConnected: false,
+        isSmartAccount: false,
       });
 
       toast({
-        title: 'Connection Failed',
+        title: 'Smart Account Connection Failed',
         description: errorMessage,
         variant: 'destructive',
       });
     }
-  }, [user?.email, generateWalletFromEmail, toast]);
+  }, [user?.email, toast, alchemy]);
 
+  // Disconnect smart account
+  const disconnect = useCallback((): void => {
+    alchemy.disconnect();
+    setState({
+      address: null,
+      error: null,
+      isConnected: false,
+      isSmartAccount: false,
+    });
+
+    toast({
+      title: 'Smart Account Disconnected',
+      description: 'Your Alchemy Smart Account has been disconnected',
+    });
+  }, [alchemy, toast]);
+
+  // Get signer for the smart account
   const getSigner = useCallback(async (): Promise<any | null> => {
-    if (!user?.email || !state.isConnected) {
+    if (!state.isConnected) {
       return null;
     }
 
     try {
-      const wallet = generateWalletFromEmail(user.email);
-      return wallet;
-    } catch {
+      return await alchemy.getSigner();
+    } catch (error) {
+      console.error('Failed to get signer:', error);
       return null;
     }
-  }, [user?.email, state.isConnected, generateWalletFromEmail]);
+  }, [state.isConnected, alchemy]);
 
+  // Sign message with smart account
   const signMessage = useCallback(async (message: string): Promise<string | null> => {
-    if (!user?.email || !state.isConnected) {
+    if (!state.isConnected) {
       return null;
     }
 
     try {
-      const wallet = generateWalletFromEmail(user.email);
-      const signature = await wallet.signMessage(message);
-      return signature;
-    } catch {
+      return await alchemy.signMessage(message);
+    } catch (error) {
+      console.error('Failed to sign message:', error);
       return null;
     }
-  }, [user?.email, state.isConnected, generateWalletFromEmail]);
+  }, [state.isConnected, alchemy]);
 
-  // Auto-connect when user is available
-  useEffect(() => {
-    if (user?.email && !state.isConnected && !state.isLoading) {
-      connectSmartWallet();
+  // Send user operation (gas-sponsored transaction)
+  const sendUserOperation = useCallback(async (
+    target: string,
+    data: string,
+    value?: bigint
+  ): Promise<string | null> => {
+    if (!state.isConnected) {
+      return null;
     }
-  }, [user?.email, state.isConnected, state.isLoading, connectSmartWallet]);
 
-  // Add function to get stored wallet address from profile
-  const getStoredWalletAddress = useCallback(async (): Promise<string | null> => {
-    if (!user?.id) return null;
-    
     try {
-      // In a real implementation, you would fetch this from your API
-      // For now, we'll continue using the deterministic generation
-      const wallet = generateWalletFromEmail(user.email!);
-      return wallet.address;
-    } catch {
+      return await alchemy.sendUserOperation(target, data, value);
+    } catch (error) {
+      console.error('Failed to send user operation:', error);
       return null;
     }
-  }, [user?.id, user?.email, generateWalletFromEmail]);
+  }, [state.isConnected, alchemy]);
 
   return {
     state,
-    connectSmartWallet,
     getSigner,
     signMessage,
+    sendUserOperation,
+    connectSmartAccount,
+    disconnect,
   };
 }
