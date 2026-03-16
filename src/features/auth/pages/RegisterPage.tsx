@@ -7,7 +7,8 @@ import { useSupabaseAuth } from '../hooks/useSupabaseAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Blocks, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { generateSimpleWalletAddress } from '@/lib/walletGenerator';
+import { createStudentAccountWithAutoWallet } from '@/features/auth/lib/studentAccount';
+import { getEmbeddedSmartAccountAddress } from '@/lib/embeddedSmartAccountProvider';
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -59,26 +60,29 @@ const RegisterPage = () => {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user) {
-        // Generate automatic wallet address for the user
-        const walletAddress = generateSimpleWalletAddress(formData.email);
-        
-        // Create profile with automatically assigned wallet address
-        await supabase.from('profiles').insert({
-          user_id: user.id,
-          full_name: formData.fullName,
-          student_id: formData.studentId,
-          department: formData.department,
-          wallet_address: walletAddress.address,
-        });
+        const apiKey = import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined;
+        if (!apiKey) {
+          throw new Error('Missing VITE_ALCHEMY_API_KEY for smart account creation');
+        }
 
-        await supabase.from('user_roles').insert({
-          user_id: user.id,
-          role: 'student',
-        });
+        const { walletAddress } = await createStudentAccountWithAutoWallet(
+          supabase,
+          {
+            userId: user.id,
+            email: formData.email,
+            fullName: formData.fullName,
+            studentId: formData.studentId,
+            department: formData.department,
+          },
+          {
+            getAddress: async (_email: string) =>
+              getEmbeddedSmartAccountAddress({ apiKey, userId: user.id }),
+          }
+        );
 
         toast({
           title: 'Registration successful',
-          description: `Welcome to the blockchain voting system! Your wallet address ${walletAddress.address} has been automatically assigned.`,
+          description: `Welcome to the blockchain voting system! Your wallet address ${walletAddress} has been automatically assigned.`,
         });
       }
       navigate('/voting');

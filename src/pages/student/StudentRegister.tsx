@@ -7,7 +7,8 @@ import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Blocks, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { generateSimpleWalletAddress } from '@/lib/walletGenerator';
+import { createStudentAccountWithAutoWallet } from '@/features/auth/lib/studentAccount';
+import { getEmbeddedSmartAccountAddress } from '@/lib/embeddedSmartAccountProvider';
 
 const StudentRegister = () => {
   const navigate = useNavigate();
@@ -58,13 +59,34 @@ const StudentRegister = () => {
     });
     
     if (!error) {
-      // Generate automatic wallet address for the user
-      const walletAddress = generateSimpleWalletAddress(formData.email);
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        const apiKey = import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined;
+        if (!apiKey) {
+          throw new Error('Missing VITE_ALCHEMY_API_KEY for smart account creation');
+        }
+
+        const { walletAddress } = await createStudentAccountWithAutoWallet(
+          supabase,
+          {
+            userId: user.id,
+            email: formData.email,
+            fullName: formData.fullName,
+            studentId: formData.studentId,
+            department: formData.department,
+          },
+          {
+            getAddress: async (_email: string) =>
+              getEmbeddedSmartAccountAddress({ apiKey, userId: user.id }),
+          }
+        );
       
-      toast({
-        title: 'Registration successful',
-        description: `Welcome to the blockchain voting system! Check your email to confirm your account. Your wallet address ${walletAddress.address} will be automatically assigned.`,
-      });
+        toast({
+          title: 'Registration successful',
+          description: `Welcome to the blockchain voting system! Check your email to confirm your account. Your wallet address ${walletAddress} has been automatically assigned.`,
+        });
+      }
       
       // Navigate to login page instead of directly to voting
       // The profile and role assignment will be handled by a database trigger or backend function
