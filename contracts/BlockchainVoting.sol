@@ -3,14 +3,13 @@ pragma solidity ^0.8.19;
 
 /**
  * @title BlockchainVoting
- * @dev A secure, transparent voting system on Ethereum blockchain
- * @notice This contract handles election creation, candidate registration, and vote casting
+ * @author Rjay Solamo
+ * @notice A secure, transparent voting system on Ethereum blockchain
+ * @dev This contract handles election creation, candidate registration, and vote casting
  * with built-in security features and audit capabilities
  */
 contract BlockchainVoting {
-    
-    // ============ STRUCTS ============
-    
+        
     struct Election {
         uint256 id;
         string title;
