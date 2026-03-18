@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { useActiveElection, useElectionCandidates, useElectionPositions } from '@/hooks/useElection';
@@ -30,10 +30,11 @@ const BlockchainVotingDashboardWithWallet = () => {
   const navigate = useNavigate();
   const { user, profile, signOut, hasRole } = useSupabaseAuth();
   const { toast } = useToast();
-  const { state: smartWalletState } = useSmartWallet();
+  const { state: smartWalletState, enrollPasskey } = useSmartWallet();
   const { data: election, isLoading: electionLoading } = useActiveElection();
   const { data: candidates, isLoading: candidatesLoading } = useElectionCandidates(election?.id);
   const { castVote, isSubmitting } = useOnChainVoting();
+  const [isEnrollBusy, setIsEnrollBusy] = useState(false);
   
   const positions = useElectionPositions(candidates || []);
   const [votedPositions, setVotedPositions] = useState<Record<string, string>>({});
@@ -66,6 +67,15 @@ const BlockchainVotingDashboardWithWallet = () => {
     }
   };
 
+  const handlePasskeyEnrollment = useCallback(async () => {
+    setIsEnrollBusy(true);
+    try {
+      await enrollPasskey();
+    } finally {
+      setIsEnrollBusy(false);
+    }
+  }, [enrollPasskey]);
+
   const confirmVote = async () => {
     if (!election) return;
 
@@ -74,7 +84,6 @@ const BlockchainVotingDashboardWithWallet = () => {
     const result = await castVote({
       candidateId: confirmDialog.candidateId,
       electionId: election.id,
-      position: confirmDialog.position,
     });
 
     setConfirmDialog({ open: false, candidateId: '', candidateName: '', position: '' });
@@ -172,6 +181,22 @@ const BlockchainVotingDashboardWithWallet = () => {
 
       <main className="container mx-auto px-4 py-8">
         <WalletAuthGuard message="Your smart wallet is automatically available for blockchain voting">
+          {!smartWalletState.isEnrolled && (
+            <div className="mb-6 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold text-foreground">Passkey enrollment required</p>
+              <p className="text-muted-foreground">
+                Enroll a passkey on this device so the app can derive your smart account and cast votes.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={handlePasskeyEnrollment} disabled={isEnrollBusy}>
+                  {isEnrollBusy ? 'Enrolling passkey…' : 'Enroll passkey'}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  This stores a WebAuthn credential locally and enables the ERC-4337 smart account flow.
+                </span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <div className="lg:col-span-2">
               <div className="bg-card border border-border rounded-lg p-6 mb-6">

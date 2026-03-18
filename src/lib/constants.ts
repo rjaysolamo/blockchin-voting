@@ -6,7 +6,7 @@ export const APP_NAME = 'Blockchain Voting System';
 export const APP_VERSION = '1.0.0';
 
 // Blockchain Constants
-export const BLOCKCHAIN_NETWORK = import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'sepolia';
+export const BLOCKCHAIN_NETWORK = import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'baseSepolia';
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '';
 
 // Supabase Configuration
