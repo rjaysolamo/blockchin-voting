@@ -44,11 +44,16 @@ import {
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useWallet } from '@/hooks/useWallet';
+import { isValidEthereumAddress } from '@/lib/walletGenerator';
 
 const AdminCandidates = () => {
   const { toast } = useToast();
+  const { state: walletState, connectWallet } = useWallet();
   const [search, setSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<string[]>([]);
+  const requiredAdminWallet = (import.meta.env.VITE_ADMIN_DEPLOYER_WALLET || '').trim().toLowerCase();
+  const hasValidAdminWalletConfig = isValidEthereumAddress(requiredAdminWallet);
   
   // Get active election and candidates
   const { data: election, isLoading: electionLoading } = useActiveElection();
@@ -144,36 +149,80 @@ const AdminCandidates = () => {
           description: `${formData.name} has been updated successfully.`,
         });
       } else {
-        const createdCandidate = await createCandidate.mutateAsync({
-          election_id: election.id,
-          name: formData.name,
-          position: formData.position,
-          department: formData.department || undefined,
-          year_level: formData.year_level || undefined,
-          manifesto: formData.manifesto || undefined,
-          photo_url: formData.photo_url || undefined,
+        if (!hasValidAdminWalletConfig) {
+          throw new Error('Admin deployer wallet is not configured. Set VITE_ADMIN_DEPLOYER_WALLET and restart app.');
+        }
+
+        const connectedAddress = (
+          walletState.address ||
+          (await connectWallet(requiredAdminWallet))
+        ).toLowerCase();
+
+        if (connectedAddress !== requiredAdminWallet) {
+          throw new Error('Connected wallet does not match configured deployer wallet.');
+        }
+
+        const ethereum = (window as Window & { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+        if (!ethereum) {
+          throw new Error('No EVM wallet detected for signing.');
+        }
+
+        const signMessage = [
+          'Candidate Creation Approval',
+          `Name: ${formData.name}`,
+          `Position: ${formData.position}`,
+          `ElectionId: ${election.id}`,
+          `Timestamp: ${new Date().toISOString()}`,
+        ].join('\n');
+
+        const signature = await ethereum.request({
+          method: 'personal_sign',
+          params: [signMessage, connectedAddress],
         });
 
         const { error: syncError, data: syncData } = await supabase.functions.invoke(
           'onchain-admin-sync',
           {
-            body: { action: 'create-candidate', candidateId: createdCandidate.id },
+            body: {
+              action: 'create-candidate-direct',
+              electionId: election.id,
+              candidateName: formData.name,
+              candidatePosition: formData.position,
+              candidateDepartment: formData.department || null,
+              candidateYearLevel: formData.year_level || null,
+              candidateManifesto: formData.manifesto || null,
+              candidatePhotoUrl: formData.photo_url || null,
+              signedMessage: signMessage,
+              walletSignature: signature,
+              adminWallet: connectedAddress,
+            },
           }
         );
-        if (syncError || syncData?.error) {
+        if (syncError || syncData?.error || !syncData?.success) {
           throw new Error(syncError?.message || syncData?.error || 'Failed to create candidate on-chain');
         }
 
         toast({
           title: 'Candidate added',
-          description: `${formData.name} has been added and synced on-chain.`,
+          description: syncData?.txHash
+            ? `${formData.name} added and registered on-chain (tx: ${String(syncData.txHash).slice(0, 10)}...).`
+            : `${formData.name} has been added and synced on-chain.`,
         });
       }
       setFormDialogOpen(false);
+      setFormData({
+        name: '',
+        position: '',
+        department: '',
+        year_level: '',
+        manifesto: '',
+        photo_url: '',
+      });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save candidate. Please try again.';
       toast({
         title: 'Error',
-        description: 'Failed to save candidate. Please try again.',
+        description: message,
         variant: 'destructive',
       });
     }

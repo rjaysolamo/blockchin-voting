@@ -64,8 +64,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const ensureCurrentUserBootstrap = async () => {
     try {
-      const callRpc = supabase.rpc as unknown as (fn: string) => Promise<{ error: Error | null }>;
-      const { error } = await callRpc('ensure_current_user_bootstrap');
+      const { error } = await supabase.rpc('ensure_current_user_bootstrap' as never);
       if (error) {
         console.error('Failed to ensure current user bootstrap:', error);
       }

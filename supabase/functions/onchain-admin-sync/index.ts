@@ -6,6 +6,8 @@ import {
   decodeEventLog,
   http,
   parseAbi,
+  recoverMessageAddress,
+  toHex,
   type Hex,
 } from "https://esm.sh/viem@2.46.2";
 import { privateKeyToAccount } from "https://esm.sh/viem@2.46.2/accounts";
@@ -15,7 +17,9 @@ const app = new Hono();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Max-Age": "86400",
 };
 
 const CONTRACT_ABI = parseAbi([
@@ -27,12 +31,21 @@ const CONTRACT_ABI = parseAbi([
 
 type ChainName = "baseSepolia" | "base" | "sepolia";
 
-type SyncAction = "create-election" | "create-candidate";
+type SyncAction = "create-election" | "create-candidate" | "create-candidate-direct";
 
 type SyncRequest = {
   action: SyncAction;
   electionId?: string;
   candidateId?: string;
+  candidateName?: string;
+  candidatePosition?: string;
+  candidateDepartment?: string | null;
+  candidateYearLevel?: string | null;
+  candidateManifesto?: string | null;
+  candidatePhotoUrl?: string | null;
+  signedMessage?: string;
+  walletSignature?: string;
+  adminWallet?: string;
 };
 
 function getChain(chainName: ChainName) {
@@ -128,6 +141,63 @@ async function assertAdminRole(serviceClient: ReturnType<typeof createClient>, u
   if (!data || data.length === 0) throw new Error("Only admin users can run on-chain sync");
 }
 
+async function authorizeAdmin(
+  body: SyncRequest,
+  authHeader: string | undefined,
+  supabaseUrl: string,
+  anonKey: string,
+  serviceClient: ReturnType<typeof createClient>,
+  expectedAdminWallet: string
+): Promise<void> {
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const userId = await getAuthenticatedUserId(authHeader, supabaseUrl, anonKey);
+      await assertAdminRole(serviceClient, userId);
+      return;
+    } catch {
+      // Fall through to wallet-signature authorization.
+    }
+  }
+
+  const signedMessage = body.signedMessage?.trim();
+  const walletSignature = body.walletSignature?.trim();
+  const adminWallet = body.adminWallet?.trim().toLowerCase();
+  const normalizedExpected = expectedAdminWallet.trim().toLowerCase();
+
+  if (!signedMessage || !walletSignature || !adminWallet) {
+    throw new Error("Unauthorized: missing wallet signature payload");
+  }
+  if (adminWallet !== normalizedExpected) {
+    throw new Error("Unauthorized: wallet does not match configured admin wallet");
+  }
+
+  let recovered: string | null = null;
+
+  try {
+    recovered = await recoverMessageAddress({
+      message: signedMessage,
+      signature: walletSignature as Hex,
+    });
+  } catch {
+    recovered = null;
+  }
+
+  if (!recovered || recovered.toLowerCase() !== normalizedExpected) {
+    try {
+      recovered = await recoverMessageAddress({
+        message: { raw: toHex(signedMessage) },
+        signature: walletSignature as Hex,
+      });
+    } catch {
+      recovered = null;
+    }
+  }
+
+  if (!recovered || recovered.toLowerCase() !== normalizedExpected) {
+    throw new Error("Unauthorized: invalid wallet signature");
+  }
+}
+
 function extractIndexedUintFromLog(logs: readonly { data: Hex; topics: readonly Hex[] }[], eventName: "ElectionCreated" | "CandidateRegistered"): bigint | null {
   for (const log of logs) {
     try {
@@ -149,17 +219,14 @@ function extractIndexedUintFromLog(logs: readonly { data: Hex; topics: readonly 
   return null;
 }
 
-app.options("*", () => new Response(null, { headers: corsHeaders }));
+app.options("*", () => new Response("ok", { status: 200, headers: corsHeaders }));
 
-app.post("/", async (c) => {
+app.post("*", async (c) => {
   try {
     const authHeader = c.req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "Unauthorized" }, 401, corsHeaders);
-    }
 
     const body = (await c.req.json().catch(() => ({}))) as SyncRequest;
-    if (!body.action || (body.action !== "create-election" && body.action !== "create-candidate")) {
+    if (!body.action || (body.action !== "create-election" && body.action !== "create-candidate" && body.action !== "create-candidate-direct")) {
       return c.json({ error: "Invalid action" }, 400, corsHeaders);
     }
 
@@ -168,6 +235,7 @@ app.post("/", async (c) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const rpcUrl = Deno.env.get("ONCHAIN_RPC_URL") || "";
     const privateKeyRaw = Deno.env.get("ONCHAIN_ADMIN_PRIVATE_KEY") || "";
+    const adminWalletRaw = Deno.env.get("ONCHAIN_ADMIN_WALLET") || "";
     const contractAddressRaw = Deno.env.get("ONCHAIN_CONTRACT_ADDRESS") || "";
     const chainNameRaw = (Deno.env.get("ONCHAIN_NETWORK") || "baseSepolia").trim() as ChainName;
 
@@ -185,12 +253,20 @@ app.post("/", async (c) => {
     const chainName: ChainName = chainNameRaw === "base" || chainNameRaw === "sepolia" ? chainNameRaw : "baseSepolia";
     const chain = getChain(chainName);
 
-    const userId = await getAuthenticatedUserId(authHeader, supabaseUrl, anonKey);
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
-    await assertAdminRole(serviceClient, userId);
 
     const account = privateKeyToAccount(normalizeHexPrivateKey(privateKeyRaw));
+    const expectedAdminWallet = adminWalletRaw.trim() || account.address;
     const contractAddress = validateAddress(contractAddressRaw, "ONCHAIN_CONTRACT_ADDRESS");
+
+    await authorizeAdmin(
+      body,
+      authHeader,
+      supabaseUrl,
+      anonKey,
+      serviceClient,
+      expectedAdminWallet
+    );
 
     const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
     const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
@@ -261,6 +337,87 @@ app.post("/", async (c) => {
           chain: chainName,
           electionId: election.id,
           onchainElectionId: onchainElectionId.toString(),
+          txHash,
+          alreadyMapped: false,
+        },
+        200,
+        corsHeaders
+      );
+    }
+
+    if (body.action === "create-candidate-direct") {
+      if (!body.electionId || !body.candidateName || !body.candidatePosition) {
+        return c.json({ error: "Missing electionId, candidateName, or candidatePosition" }, 400, corsHeaders);
+      }
+
+      const { data: insertedCandidate, error: insertError } = await serviceClient
+        .from("candidates")
+        .insert({
+          election_id: body.electionId,
+          name: body.candidateName,
+          position: body.candidatePosition,
+          department: body.candidateDepartment ?? null,
+          year_level: body.candidateYearLevel ?? null,
+          manifesto: body.candidateManifesto ?? null,
+          photo_url: body.candidatePhotoUrl ?? null,
+        })
+        .select("id, election_id, name, position")
+        .single();
+
+      if (insertError || !insertedCandidate) {
+        return c.json({ error: insertError?.message || "Failed to create candidate" }, 500, corsHeaders);
+      }
+
+      const { data: electionMap, error: electionMapError } = await serviceClient
+        .from("onchain_entity_map")
+        .select("onchain_id")
+        .eq("entity_type", "election")
+        .eq("offchain_id", insertedCandidate.election_id)
+        .eq("chain", chainName)
+        .maybeSingle();
+
+      if (electionMapError || !electionMap?.onchain_id) {
+        await serviceClient.from("candidates").delete().eq("id", insertedCandidate.id);
+        return c.json({ error: electionMapError?.message || "Election mapping missing. Sync election on-chain first." }, 400, corsHeaders);
+      }
+
+      const onchainElectionId = BigInt(electionMap.onchain_id);
+      const positionIndex = mapPositionToOnchainIndex(insertedCandidate.position);
+
+      const txHash = await walletClient.writeContract({
+        address: contractAddress,
+        abi: CONTRACT_ABI,
+        functionName: "registerCandidate",
+        args: [onchainElectionId, insertedCandidate.name, positionIndex],
+      });
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      const onchainCandidateId = extractIndexedUintFromLog(receipt.logs as readonly { data: Hex; topics: readonly Hex[] }[], "CandidateRegistered");
+      if (onchainCandidateId === null) {
+        await serviceClient.from("candidates").delete().eq("id", insertedCandidate.id);
+        return c.json({ error: "CandidateRegistered event not found in receipt" }, 500, corsHeaders);
+      }
+
+      const { error: upsertError } = await serviceClient.from("onchain_entity_map").upsert({
+        entity_type: "candidate",
+        offchain_id: insertedCandidate.id,
+        onchain_id: onchainCandidateId.toString(),
+        chain: chainName,
+        updated_at: new Date().toISOString(),
+      });
+
+      if (upsertError) {
+        await serviceClient.from("candidates").delete().eq("id", insertedCandidate.id);
+        return c.json({ error: upsertError.message }, 500, corsHeaders);
+      }
+
+      return c.json(
+        {
+          success: true,
+          chain: chainName,
+          candidateId: insertedCandidate.id,
+          onchainElectionId: onchainElectionId.toString(),
+          onchainCandidateId: onchainCandidateId.toString(),
           txHash,
           alreadyMapped: false,
         },

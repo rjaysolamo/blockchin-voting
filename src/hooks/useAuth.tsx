@@ -5,6 +5,7 @@ import { loginUser, logoutUser, getCurrentUser } from '@/api/auth';
 interface AuthContextType {
   user: User | null;
   login: (role: UserRole, credentials: LoginCredentials) => Promise<boolean>;
+  loginWithWallet: (role: UserRole, walletAddress: string) => Promise<boolean>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -28,6 +29,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithWallet = async (role: UserRole, walletAddress: string): Promise<boolean> => {
+    const normalizedAddress = walletAddress.trim().toLowerCase();
+    if (!normalizedAddress) return false;
+
+    setUser({
+      id: normalizedAddress,
+      email: `${normalizedAddress}@wallet.local`,
+      name: 'Contract Admin',
+      role,
+    });
+
+    return true;
+  };
+
   const logout = async (): Promise<void> => {
     try {
       await logoutUser();
@@ -38,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, loginWithWallet, logout, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

@@ -12,12 +12,26 @@ import { useActiveElection, useUpdateElection } from '@/hooks/useAdminElection';
 import { Plus, Settings2, ShieldAlert, Database, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useWallet } from '@/hooks/useWallet';
+import { isValidEthereumAddress } from '@/lib/walletGenerator';
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
 
 const AdminSettings = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: election, isLoading } = useActiveElection();
+  const { state: walletState, connectWallet } = useWallet();
   const updateElection = useUpdateElection();
+  const requiredAdminWallet = (import.meta.env.VITE_ADMIN_DEPLOYER_WALLET || '').trim().toLowerCase();
+  const hasValidAdminWalletConfig = isValidEthereumAddress(requiredAdminWallet);
   
   const [electionTitle, setElectionTitle] = useState('');
   const [electionDescription, setElectionDescription] = useState('');
@@ -117,6 +131,41 @@ const AdminSettings = () => {
 
     setIsCreating(true);
     try {
+      if (!hasValidAdminWalletConfig) {
+        throw new Error('Admin deployer wallet is not configured. Set VITE_ADMIN_DEPLOYER_WALLET and restart the app.');
+      }
+
+      const connectedAddress = (
+        walletState.address ||
+        (await connectWallet(requiredAdminWallet))
+      ).toLowerCase();
+
+      if (connectedAddress !== requiredAdminWallet) {
+        throw new Error('Connected wallet does not match the configured deployer wallet.');
+      }
+
+      const ethereum = (window as Window & { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+      if (!ethereum) {
+        throw new Error('No EVM wallet detected for signing.');
+      }
+
+      const signMessage = [
+        'Election Creation Approval',
+        `Title: ${newElectionTitle}`,
+        `Start: ${new Date(newStartDate).toISOString()}`,
+        `End: ${new Date(newEndDate).toISOString()}`,
+        `Timestamp: ${new Date().toISOString()}`,
+      ].join('\n');
+
+      const signature = await ethereum.request({
+        method: 'personal_sign',
+        params: [signMessage, connectedAddress],
+      });
+
+      if (!signature) {
+        throw new Error('Wallet signature was not provided.');
+      }
+
       const { data: createdElection, error } = await supabase
         .from('elections')
         .insert({
@@ -134,16 +183,26 @@ const AdminSettings = () => {
       const { error: syncError, data: syncData } = await supabase.functions.invoke(
         'onchain-admin-sync',
         {
-          body: { action: 'create-election', electionId: createdElection.id },
+          body: {
+            action: 'create-election',
+            electionId: createdElection.id,
+            signedMessage: signMessage,
+            walletSignature: signature,
+            adminWallet: connectedAddress,
+          },
         }
       );
-      if (syncError || syncData?.error) {
+      if (syncError || syncData?.error || !syncData?.success) {
+        // Keep DB and contract state consistent: remove the DB election if on-chain sync fails.
+        await supabase.from('elections').delete().eq('id', createdElection.id);
         throw new Error(syncError?.message || syncData?.error || 'Failed to create election on-chain');
       }
 
       toast({
         title: 'Election created',
-        description: 'New election has been created and synced on-chain successfully.',
+        description: syncData?.txHash
+          ? `Wallet signature verified. Synced on-chain (tx: ${String(syncData.txHash).slice(0, 10)}...).`
+          : 'Wallet signature verified. Election created and already mapped on-chain.',
       });
       
       // Reset form and refresh data
@@ -154,9 +213,10 @@ const AdminSettings = () => {
       setNewEndDate('');
       queryClient.invalidateQueries({ queryKey: ['active-election'] });
     } catch (error) {
+      const message = getErrorMessage(error, 'Failed to create election. Please try again.');
       toast({
         title: 'Error',
-        description: 'Failed to create election. Please try again.',
+        description: message,
         variant: 'destructive',
       });
     } finally {
@@ -278,8 +338,11 @@ const AdminSettings = () => {
                   className="w-full mt-4"
                   disabled={isCreating}
                 >
-                  {isCreating ? 'Creating...' : 'Create Election'}
+                  {isCreating ? 'Awaiting Signature / Creating...' : 'Create Election (Sign Wallet)'}
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  Creating an election requires deployer-wallet signature approval.
+                </p>
               </div>
             </div>
           </div>

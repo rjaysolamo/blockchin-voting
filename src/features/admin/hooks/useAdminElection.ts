@@ -27,6 +27,8 @@ export function useActiveElection() {
         .from('elections')
         .select('*')
         .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;

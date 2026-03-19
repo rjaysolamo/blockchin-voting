@@ -23,7 +23,7 @@ interface WalletState {
 
 interface UseWalletReturn {
   state: WalletState;
-  connectWallet: () => Promise<void>;
+  connectWallet: (preferredAddress?: string) => Promise<string>;
   disconnectWallet: () => void;
   switchToBaseSepolia: () => Promise<void>;
 }
@@ -105,32 +105,50 @@ export function useWallet(): UseWalletReturn {
     }
   }, [checkConnection]);
 
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(async (preferredAddress?: string) => {
     if (typeof window === 'undefined' || !window.ethereum) {
-      alert('Please install MetaMask!');
-      return;
+      throw new Error('No EVM wallet detected. Please install MetaMask or a compatible wallet.');
     }
 
     setState(prev => ({ ...prev, isConnecting: true }));
 
     try {
+      // Re-request account permission so wallet can show account selector.
+      await window.ethereum.request({
+        method: 'wallet_requestPermissions',
+        params: [{ eth_accounts: {} }],
+      });
+
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts',
       });
+
+      if (!accounts?.length) {
+        throw new Error('No wallet account returned. Please unlock your wallet and try again.');
+      }
+
+      const normalizedPreferred = preferredAddress?.toLowerCase();
+      const matchedAccount =
+        normalizedPreferred
+          ? accounts.find((account: string) => account.toLowerCase() === normalizedPreferred)
+          : undefined;
+      const selectedAccount = matchedAccount || accounts[0];
 
       const chainId = await window.ethereum.request({
         method: 'eth_chainId',
       });
 
       setState({
-        address: accounts[0],
+        address: selectedAccount,
         chainId,
         isConnected: true,
         isConnecting: false,
       });
+      return selectedAccount;
     } catch (error) {
       console.error('Error connecting wallet:', error);
       setState(prev => ({ ...prev, isConnecting: false }));
+      throw error instanceof Error ? error : new Error('Failed to connect wallet.');
     }
   }, []);
 

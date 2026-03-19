@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Create events table
 CREATE TABLE public.events (
     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -34,7 +36,7 @@ ADD COLUMN IF NOT EXISTS qr_code TEXT UNIQUE;
 CREATE OR REPLACE FUNCTION public.generate_profile_qr_code()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.qr_code := encode(gen_random_bytes(16), 'hex');
+    NEW.qr_code := replace(gen_random_uuid()::text, '-', '');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SET search_path = public;
@@ -49,7 +51,7 @@ CREATE TRIGGER generate_qr_code_trigger
 
 -- Update existing profiles with QR codes
 UPDATE public.profiles 
-SET qr_code = encode(gen_random_bytes(16), 'hex') 
+SET qr_code = replace(gen_random_uuid()::text, '-', '') 
 WHERE qr_code IS NULL;
 
 -- Enable RLS on events
