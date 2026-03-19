@@ -40,52 +40,53 @@ const StaffLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const trimmedEmail = email.trim();
+    try {
+      const trimmedEmail = email.trim();
 
-    if (!trimmedEmail.includes('@')) {
-      toast({
-        title: 'Email required',
-        description: 'Please sign in with your staff email address.',
-        variant: 'destructive',
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    const { error } = await signIn(trimmedEmail, password);
-    if (!error) {
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
-      if (userId) {
-        const { data: existingRole } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('role', 'staff')
-          .maybeSingle();
-
-        if (!existingRole) {
-          await supabase.from('user_roles').insert({
-            user_id: userId,
-            role: 'staff',
-          });
-        }
+      if (!trimmedEmail.includes('@')) {
+        toast({
+          title: 'Email required',
+          description: 'Please sign in with your staff email address.',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the attendance scanner',
-      });
-      navigate('/staff/dashboard');
-    } else {
-      toast({
-        title: 'Login failed',
-        description: error.message || 'Invalid credentials',
-        variant: 'destructive',
-      });
+      const { error } = await signIn(trimmedEmail, password);
+      if (!error) {
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData.user?.id;
+        if (userId) {
+          const { data: existingRole } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId)
+            .eq('role', 'staff')
+            .maybeSingle();
+
+          if (!existingRole) {
+            await supabase.from('user_roles').insert({
+              user_id: userId,
+              role: 'staff',
+            });
+          }
+        }
+
+        toast({
+          title: 'Login successful',
+          description: 'Welcome to the attendance scanner',
+        });
+        navigate('/staff/dashboard');
+      } else {
+        toast({
+          title: 'Login failed',
+          description: error.message || 'Invalid credentials',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   const handleResetPassword = async () => {

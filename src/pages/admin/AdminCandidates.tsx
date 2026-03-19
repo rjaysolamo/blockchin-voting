@@ -25,6 +25,7 @@ import {
   useDeleteCandidate,
 } from '@/hooks/useAdminElection';
 import { DbCandidate } from '@/@types/blockchain';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Table,
   TableBody,
@@ -143,7 +144,7 @@ const AdminCandidates = () => {
           description: `${formData.name} has been updated successfully.`,
         });
       } else {
-        await createCandidate.mutateAsync({
+        const createdCandidate = await createCandidate.mutateAsync({
           election_id: election.id,
           name: formData.name,
           position: formData.position,
@@ -152,9 +153,20 @@ const AdminCandidates = () => {
           manifesto: formData.manifesto || undefined,
           photo_url: formData.photo_url || undefined,
         });
+
+        const { error: syncError, data: syncData } = await supabase.functions.invoke(
+          'onchain-admin-sync',
+          {
+            body: { action: 'create-candidate', candidateId: createdCandidate.id },
+          }
+        );
+        if (syncError || syncData?.error) {
+          throw new Error(syncError?.message || syncData?.error || 'Failed to create candidate on-chain');
+        }
+
         toast({
           title: 'Candidate added',
-          description: `${formData.name} has been added as a candidate.`,
+          description: `${formData.name} has been added and synced on-chain.`,
         });
       }
       setFormDialogOpen(false);

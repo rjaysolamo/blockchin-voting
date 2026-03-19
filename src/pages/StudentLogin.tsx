@@ -19,26 +19,26 @@ const StudentLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      const success = await login('student', { email: studentId, password });
 
-    const success = login('student', { email: studentId, password });
-    
-    if (success) {
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the voting portal',
-      });
-      navigate('/student/dashboard');
-    } else {
+      if (success) {
+        toast({
+          title: 'Login successful',
+          description: 'Welcome to the voting portal',
+        });
+        navigate('/student/dashboard');
+        return;
+      }
+
       toast({
         title: 'Login failed',
         description: 'Invalid credentials',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (

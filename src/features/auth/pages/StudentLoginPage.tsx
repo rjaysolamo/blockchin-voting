@@ -19,23 +19,38 @@ const StudentLoginPage = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
-    
-    if (!error) {
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the blockchain voting portal',
-      });
-      navigate('/voting');
-    } else {
+    try {
+      const { error } = await signIn(email, password);
+
+      if (!error) {
+        toast({
+          title: 'Login successful',
+          description: 'Welcome to the blockchain voting portal',
+        });
+        navigate('/student/blockchain-voting');
+        return;
+      }
+
+      const errorMessage = error.message?.toLowerCase() || '';
+      const isInvalidCredential = errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid credentials');
+
       toast({
         title: 'Login failed',
-        description: error.message || 'Invalid credentials',
+        description: isInvalidCredential
+          ? 'Invalid credentials or your email is not confirmed yet. Check your inbox/spam for the confirmation email.'
+          : error.message || 'Unable to sign in right now',
         variant: 'destructive',
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error while signing in';
+      toast({
+        title: 'Sign-in request failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
@@ -92,7 +107,7 @@ const StudentLoginPage = () => {
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Don't have an account?{' '}
-            <Link to="/auth/register" className="text-primary hover:underline">
+            <Link to="/student/register" className="text-primary hover:underline">
               Register here
             </Link>
           </p>

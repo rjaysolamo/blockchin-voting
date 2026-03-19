@@ -117,19 +117,33 @@ const AdminSettings = () => {
 
     setIsCreating(true);
     try {
-      const { error } = await supabase.from('elections').insert({
-        title: newElectionTitle,
-        description: newElectionDescription || null,
-        start_date: new Date(newStartDate).toISOString(),
-        end_date: new Date(newEndDate).toISOString(),
-        is_active: true,
-      });
+      const { data: createdElection, error } = await supabase
+        .from('elections')
+        .insert({
+          title: newElectionTitle,
+          description: newElectionDescription || null,
+          start_date: new Date(newStartDate).toISOString(),
+          end_date: new Date(newEndDate).toISOString(),
+          is_active: true,
+        })
+        .select('id')
+        .single();
 
-      if (error) throw error;
+      if (error || !createdElection?.id) throw error || new Error('Election insert did not return an id');
+
+      const { error: syncError, data: syncData } = await supabase.functions.invoke(
+        'onchain-admin-sync',
+        {
+          body: { action: 'create-election', electionId: createdElection.id },
+        }
+      );
+      if (syncError || syncData?.error) {
+        throw new Error(syncError?.message || syncData?.error || 'Failed to create election on-chain');
+      }
 
       toast({
         title: 'Election created',
-        description: 'New election has been created successfully.',
+        description: 'New election has been created and synced on-chain successfully.',
       });
       
       // Reset form and refresh data

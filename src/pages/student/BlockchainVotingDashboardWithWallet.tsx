@@ -15,6 +15,7 @@ import ElectionCountdown from '@/components/student/ElectionCountdown';
 import { Button } from '@/components/ui/button';
 import { LogOut, CheckCircle2, Vote, Shield, Blocks, GitCompare, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +36,8 @@ const BlockchainVotingDashboardWithWallet = () => {
   const { data: candidates, isLoading: candidatesLoading } = useElectionCandidates(election?.id);
   const { castVote, isSubmitting } = useOnChainVoting();
   const [isEnrollBusy, setIsEnrollBusy] = useState(false);
+  const [isOnChainReady, setIsOnChainReady] = useState(false);
+  const [isCheckingOnChainReady, setIsCheckingOnChainReady] = useState(false);
   
   const positions = useElectionPositions(candidates || []);
   const [votedPositions, setVotedPositions] = useState<Record<string, string>>({});
@@ -71,15 +74,51 @@ const BlockchainVotingDashboardWithWallet = () => {
     setIsEnrollBusy(true);
     try {
       await enrollPasskey();
+      if (election?.id) {
+        const { error, data } = await supabase.functions.invoke('onchain-bootstrap-voter', {
+          body: { electionId: election.id },
+        });
+        if (error || data?.error) {
+          throw new Error(error?.message || data?.error || 'Failed to bootstrap on-chain voter status');
+        }
+      }
+      setIsOnChainReady(true);
     } finally {
       setIsEnrollBusy(false);
     }
-  }, [enrollPasskey]);
+  }, [enrollPasskey, election?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !election?.id) return;
+    let mounted = true;
+
+    void (async () => {
+      setIsCheckingOnChainReady(true);
+      try {
+        const { data: status, error } = await supabase
+          .from('onchain_voter_whitelist' as never)
+          .select('is_whitelisted')
+          .eq('user_id', user.id)
+          .eq('election_id', election.id)
+          .eq('chain', (import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'baseSepolia').trim())
+          .maybeSingle();
+
+        if (error) throw error;
+        if (mounted) setIsOnChainReady(Boolean(status?.is_whitelisted));
+      } catch {
+        if (mounted) setIsOnChainReady(false);
+      } finally {
+        if (mounted) setIsCheckingOnChainReady(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id, election?.id]);
 
   const confirmVote = async () => {
     if (!election) return;
-
-    // Wallet is automatically available from user email - no connection required
 
     const result = await castVote({
       candidateId: confirmDialog.candidateId,
@@ -180,23 +219,13 @@ const BlockchainVotingDashboardWithWallet = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <WalletAuthGuard message="Your smart wallet is automatically available for blockchain voting">
-          {!smartWalletState.isEnrolled && (
-            <div className="mb-6 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-              <p className="font-semibold text-foreground">Passkey enrollment required</p>
-              <p className="text-muted-foreground">
-                Enroll a passkey on this device so the app can derive your smart account and cast votes.
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={handlePasskeyEnrollment} disabled={isEnrollBusy}>
-                  {isEnrollBusy ? 'Enrolling passkey…' : 'Enroll passkey'}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  This stores a WebAuthn credential locally and enables the ERC-4337 smart account flow.
-                </span>
-              </div>
-            </div>
-          )}
+        <WalletAuthGuard
+          message="Your smart wallet is automatically available for blockchain voting"
+          onEnrollPasskey={handlePasskeyEnrollment}
+          isEnrollmentInProgress={isEnrollBusy}
+          isAuthorized={isOnChainReady && !isCheckingOnChainReady}
+          unauthorizedMessage="Your wallet exists but is not yet whitelisted for this election. Complete passkey enrollment and wait for on-chain sync."
+        >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             <div className="lg:col-span-2">
               <div className="bg-card border border-border rounded-lg p-6 mb-6">

@@ -3,21 +3,28 @@
 import { ReactNode } from 'react';
 import { useSmartWallet } from '@/hooks/useSmartWallet';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Shield, Wallet } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 
 interface WalletAuthGuardProps {
   children: ReactNode;
   message?: string;
+  onEnrollPasskey?: () => Promise<void> | void;
+  isEnrollmentInProgress?: boolean;
+  requireConnected?: boolean;
+  isAuthorized?: boolean;
+  unauthorizedMessage?: string;
 }
 
 export function WalletAuthGuard({ 
   children, 
-  message = 'Your smart wallet is ready for voting'
+  message = 'Your smart wallet is ready for voting',
+  onEnrollPasskey,
+  isEnrollmentInProgress = false,
+  requireConnected = true,
+  isAuthorized = true,
+  unauthorizedMessage = 'Your on-chain voter access is still being prepared. Please wait a moment and try again.',
 }: WalletAuthGuardProps) {
   const { state } = useSmartWallet();
-
-  // For automatic wallet system, we don't need connection states
-  // The wallet is always available through deterministic generation
 
   if (state.error) {
     return (
@@ -31,5 +38,57 @@ export function WalletAuthGuard({
     );
   }
 
-  return <>{children}</>;
+  if (!state.isEnrolled) {
+    return (
+      <Alert className="mb-4">
+        <AlertTitle>Passkey required</AlertTitle>
+        <AlertDescription className="space-y-3">
+          <p>Enroll a passkey on this device before casting an on-chain vote.</p>
+          {onEnrollPasskey && (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-60"
+              onClick={() => void onEnrollPasskey()}
+              disabled={isEnrollmentInProgress}
+            >
+              {isEnrollmentInProgress ? 'Enrolling passkey...' : 'Enroll passkey'}
+            </button>
+          )}
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (requireConnected && !state.isConnected) {
+    return (
+      <Alert className="mb-4">
+        <AlertTitle>Smart wallet connection in progress</AlertTitle>
+        <AlertDescription>
+          Your passkey is enrolled. We are reconnecting your smart account.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!isAuthorized) {
+    return (
+      <Alert className="mb-4">
+        <AlertTitle>On-chain authorization pending</AlertTitle>
+        <AlertDescription>{unauthorizedMessage}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <>
+      {state.isConnected && (
+        <Alert className="mb-4">
+          <AlertTitle>Smart wallet ready</AlertTitle>
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      )}
+
+      {children}
+    </>
+  );
 }

@@ -17,13 +17,26 @@ interface AuthContextType {
   profile: Profile | null;
   roles: string[];
   loading: boolean;
-  signUp: (email: string, password: string, metadata?: Record<string, string>) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, metadata?: Record<string, string>) => Promise<{ error: AuthError | null; user: User | null; session: Session | null; emailConfirmationSent: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   hasRole: (role: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -51,49 +64,97 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     setRoles(data?.map(r => r.role) || []);
   }, []);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-        fetchRoles(session.user.id);
+  const ensureCurrentUserBootstrap = useCallback(async () => {
+    try {
+      const { error } = await (supabase.rpc as any)('ensure_current_user_bootstrap');
+      if (error) {
+        console.error('Failed to ensure current user bootstrap:', error);
       }
-      setLoading(false);
-    });
+    } catch (error) {
+      console.error('Bootstrap RPC failed:', error);
+    }
+  }, []);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+  useEffect(() => {
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          await fetchProfile(session.user.id);
-          await fetchRoles(session.user.id);
-        } else {
+          ensureCurrentUserBootstrap();
+          fetchProfile(session.user.id);
+          fetchRoles(session.user.id);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to initialize auth session:', error);
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setRoles([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setLoading(true);
+        try {
+          setSession(session);
+          setUser(session?.user ?? null);
+          if (session?.user) {
+            await ensureCurrentUserBootstrap();
+            await fetchProfile(session.user.id);
+            await fetchRoles(session.user.id);
+          } else {
+            setProfile(null);
+            setRoles([]);
+          }
+        } catch (error) {
+          console.error('Auth state change handling failed:', error);
           setProfile(null);
           setRoles([]);
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [fetchProfile, fetchRoles]);
+  }, [ensureCurrentUserBootstrap, fetchProfile, fetchRoles]);
 
   const signUp = async (email: string, password: string, metadata?: Record<string, string>) => {
-    const { error } = await supabase.auth.signUp({
-      email,
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailRedirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/student/login`
+      : undefined;
+
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
       password,
-      options: { data: metadata },
+      options: {
+        data: metadata,
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      },
     });
-    return { error };
+    const session = data.session ?? null;
+    const user = data.user ?? session?.user ?? null;
+    const emailConfirmationSent = !!user && !session;
+    return { error, user, session, emailConfirmationSent };
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error } = await withTimeout(
+      supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      }),
+      15000,
+      'Sign-in request timed out. Please check your network and try again.'
+    );
     return { error };
   };
 

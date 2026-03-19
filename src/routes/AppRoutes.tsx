@@ -3,7 +3,6 @@ import { Routes, Route } from 'react-router-dom';
 // Pages
 import Index from '@/pages/Index';
 import AdminLogin from '@/pages/AdminLogin';
-import StudentLogin from '@/pages/StudentLogin';
   import StaffLogin from '@/pages/StaffLogin';
 import AdminDashboard from '@/pages/admin/AdminDashboard';
 import AdminCandidates from '@/pages/admin/AdminCandidates';
@@ -38,7 +37,7 @@ const AppRoutes = () => {
       {/* Public routes */}
       <Route path="/" element={<Index />} />
       <Route path="/login/admin" element={<AdminLogin />} />
-      <Route path="/login/student" element={<StudentLogin />} />
+      <Route path="/login/student" element={<BlockchainStudentLogin />} />
       <Route path="/login/staff" element={<StaffLogin />} />
       <Route path="/student/login" element={<BlockchainStudentLogin />} />
       <Route path="/student/register" element={<StudentRegister />} />

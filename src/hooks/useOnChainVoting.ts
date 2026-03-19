@@ -7,6 +7,8 @@ import { useToast } from './use-toast';
 import { CONTRACT_ADDRESS as ENV_CONTRACT_ADDRESS } from '@/lib/constants';
 import { getEmbeddedSmartAccountClient, hasEmbeddedPasskey } from '@/lib/embeddedSmartAccountProvider';
 import { createChainPublicClient, getSupportedNetwork } from '@/lib/chain';
+import { BlockchainVotingABI } from '@/lib/abis/BlockchainVoting';
+import { supabase } from '@/integrations/supabase/client';
 
 type Hex = `0x${string}`;
 
@@ -20,37 +22,19 @@ type UserOpInclusionResult = {
   transactionHash?: Hex;
 };
 
+type ResolveOnchainVoteIdsRow = {
+  election_onchain_id: string | number | null;
+  candidate_onchain_id: string | number | null;
+};
+
 type SmartAccountClientLike = {
+  getAddress: () => Promise<string>;
   sendUserOperation: (args: { uo: { target: Hex; data: Hex; value: bigint } }) => Promise<{ hash: Hex }>;
   waitForUserOperationTransaction?: (userOpHash: Hex) => Promise<{ transactionHash?: Hex; hash?: Hex; logs?: TxLogLike[] }>;
   getUserOperationReceipt?: (userOpHash: Hex) => Promise<{ transactionHash?: Hex; receipt?: { logs?: TxLogLike[]; transactionHash?: Hex }; logs?: TxLogLike[] }>;
 };
 
-const CONTRACT_ABI = [
-  {
-    name: 'castVote',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: '_electionId', type: 'uint256' },
-      { name: '_candidateId', type: 'uint256' },
-    ],
-    outputs: [],
-  },
-  {
-    name: 'VoteCast',
-    type: 'event',
-    anonymous: false,
-    inputs: [
-      { indexed: true, name: 'blockNumber', type: 'uint256' },
-      { indexed: true, name: 'voter', type: 'address' },
-      { indexed: false, name: 'electionId', type: 'uint256' },
-      { indexed: false, name: 'candidateId', type: 'uint256' },
-      { indexed: false, name: 'voteHash', type: 'bytes32' },
-      { indexed: false, name: 'verificationCode', type: 'string' },
-    ],
-  },
-] as const;
+const CONTRACT_ABI = BlockchainVotingABI;
 
 async function waitForUserOpInclusion(client: SmartAccountClientLike, userOpHash: Hex): Promise<UserOpInclusionResult> {
   // Prefer first-class helper if available (Alchemy Account Kit exposes this on the smart account client).
@@ -84,11 +68,7 @@ function extractVerificationCodeFromLogs(
         data: log.data,
         topics: log.topics as unknown as [Hex, ...Hex[]],
       }) as unknown as { eventName: string; args: unknown };
-      if (decoded.eventName === 'VoteCast') {
-        const args = decoded.args as { verificationCode?: unknown };
-        const code = args.verificationCode;
-        if (typeof code === 'string' && code.length > 0) return code;
-      }
+      if (decoded.eventName === 'VoteCast') return 'vote-cast';
     } catch {
       // ignore logs that don't match this ABI
     }
@@ -134,17 +114,59 @@ export function useOnChainVoting(): UseOnChainVotingReturn {
         return { success: false, error: 'Missing or invalid VITE_CONTRACT_ADDRESS' };
       }
 
+      const network = getSupportedNetwork();
+
+      // Mandatory server-side orchestration: ensure on-chain registration + election whitelist first.
+      const { error: bootstrapError, data: bootstrapData } = await supabase.functions.invoke(
+        'onchain-bootstrap-voter',
+        { body: { electionId } }
+      );
+      if (bootstrapError || bootstrapData?.error) {
+        return {
+          success: false,
+          error:
+            bootstrapError?.message ||
+            bootstrapData?.error ||
+            'Failed to bootstrap on-chain voter eligibility',
+        };
+      }
+
       const enrolled = await hasEmbeddedPasskey({ userId: user.id });
       if (!enrolled) {
         return { success: false, error: 'No passkey enrolled on this device. Enroll a passkey before voting.' };
       }
 
-      // Convert string IDs to numbers for the contract
-      const electionIdNum = parseInt(electionId, 10);
-      const candidateIdNum = parseInt(candidateId, 10);
+      const { data: onchainIds, error: mappingError } = await supabase.rpc(
+        'resolve_onchain_vote_ids' as never,
+        {
+          p_election_id: electionId,
+          p_candidate_id: candidateId,
+          p_chain: network,
+        } as never
+      );
+      if (mappingError) {
+        return {
+          success: false,
+          error: mappingError.message || 'Failed to resolve on-chain election/candidate IDs',
+        };
+      }
 
-      if (isNaN(electionIdNum) || isNaN(candidateIdNum)) {
-        return { success: false, error: 'Invalid election or candidate ID' };
+      const mappedRow = (Array.isArray(onchainIds) ? onchainIds[0] : null) as ResolveOnchainVoteIdsRow | null;
+      const electionIdNum =
+        mappedRow && mappedRow.election_onchain_id != null
+          ? BigInt(String(mappedRow.election_onchain_id))
+          : null;
+      const candidateIdNum =
+        mappedRow && mappedRow.candidate_onchain_id != null
+          ? BigInt(String(mappedRow.candidate_onchain_id))
+          : null;
+
+      if (electionIdNum === null || candidateIdNum === null) {
+        return {
+          success: false,
+          error:
+            'Missing on-chain ID mapping for election/candidate. Ask admin to sync entities on-chain first.',
+        };
       }
 
       const client = (await getEmbeddedSmartAccountClient({
@@ -153,11 +175,41 @@ export function useOnChainVoting(): UseOnChainVotingReturn {
         // Production-grade flow: enrollment is separate; voting must not create credentials.
         createIfMissing: false,
       })) as unknown as SmartAccountClientLike;
+      const currentWalletAddress = (await client.getAddress()).toLowerCase();
+
+      const { data: profileWalletData, error: profileWalletError } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (profileWalletError) {
+        return {
+          success: false,
+          error: profileWalletError.message || 'Failed to load registered wallet address',
+        };
+      }
+
+      const registeredWalletAddress = profileWalletData?.wallet_address?.toLowerCase() ?? null;
+      if (!registeredWalletAddress) {
+        return {
+          success: false,
+          error: 'No registered wallet found on your profile. Please contact admin to complete wallet setup.',
+        };
+      }
+
+      if (registeredWalletAddress !== currentWalletAddress) {
+        return {
+          success: false,
+          error:
+            'This passkey controls a different smart account than your registered voter wallet. Use your original device/passkey or ask admin to migrate your wallet.',
+        };
+      }
 
       const data = encodeFunctionData({
         abi: CONTRACT_ABI,
         functionName: 'castVote',
-        args: [BigInt(electionIdNum), BigInt(candidateIdNum)],
+        args: [electionIdNum, candidateIdNum],
       });
 
       const { hash: userOpHash } = await client.sendUserOperation({
@@ -170,19 +222,27 @@ export function useOnChainVoting(): UseOnChainVotingReturn {
 
       const { receipt, transactionHash } = await waitForUserOpInclusion(client, userOpHash);
 
-      // Production guarantee: verification code must come from on-chain event logs.
-      let verificationCode: string | null = null;
+      // This contract emits VoteCast but does not emit a verification code.
+      // We use tx hash (or userOp hash fallback) as a deterministic receipt code.
+      const verificationCode: string | null = transactionHash ?? userOpHash;
 
       const inclusionLogs = (receipt && typeof receipt === 'object'
         ? ((receipt as { logs?: TxLogLike[]; receipt?: { logs?: TxLogLike[] } }).logs ??
             (receipt as { receipt?: { logs?: TxLogLike[] } }).receipt?.logs ??
             [])
         : []) as TxLogLike[];
-      verificationCode = extractVerificationCodeFromLogs(inclusionLogs);
+      const voteEventFound = !!extractVerificationCodeFromLogs(inclusionLogs);
 
       // If the AA SDK receipt doesn't contain logs reliably, fetch tx receipt via RPC and decode from there.
-      if (!verificationCode && transactionHash) {
-        const network = getSupportedNetwork();
+      if (!voteEventFound) {
+        if (!transactionHash) {
+          return {
+            success: false,
+            error:
+              'Vote was submitted, but the transaction hash is unavailable. Check smart account configuration and retry.',
+          };
+        }
+
         const publicClient = createChainPublicClient({ apiKey, network });
         const txReceipt = await publicClient.getTransactionReceipt({ hash: transactionHash });
         const relevantLogs = txReceipt.logs
@@ -194,15 +254,13 @@ export function useOnChainVoting(): UseOnChainVotingReturn {
               topics: (Array.isArray(topics) ? topics : []) as readonly Hex[],
             };
           });
-        verificationCode = extractVerificationCodeFromLogs(relevantLogs);
-      }
-
-      if (!verificationCode) {
-        return {
-          success: false,
-          error:
-            'Vote transaction included, but verification code event was not found. This indicates an on-chain/ABI mismatch or a receipt parsing issue.',
-        };
+        if (!extractVerificationCodeFromLogs(relevantLogs)) {
+          return {
+            success: false,
+            error:
+              'Vote transaction was included, but VoteCast event was not found. Check contract address/network/ABI configuration.',
+          };
+        }
       }
 
       setLastVerificationCode(verificationCode);

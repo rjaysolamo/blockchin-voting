@@ -1,4 +1,6 @@
-const { ethers } = require("hardhat");
+import hre from "hardhat";
+import fs from "node:fs";
+const { ethers } = hre;
 
 async function main() {
   console.log("🚀 Deploying BlockchainVoting contract...");
@@ -10,16 +12,16 @@ async function main() {
   const votingContract = await BlockchainVoting.deploy();
   
   // Wait for deployment to complete
-  await votingContract.deployed();
+  await votingContract.waitForDeployment();
+  const deployedAddress = await votingContract.getAddress();
   
-  console.log("✅ BlockchainVoting contract deployed to:", votingContract.address);
+  console.log("✅ BlockchainVoting contract deployed to:", deployedAddress);
   
   // Get the network information
   const network = await ethers.provider.getNetwork();
   console.log("📋 Network:", network.name, "(", network.chainId, ")");
   
   // Save deployment information to a file
-  const fs = require("fs");
   const deploymentsDir = "./deployments";
   
   if (!fs.existsSync(deploymentsDir)) {
@@ -28,12 +30,12 @@ async function main() {
   
   const deploymentInfo = {
     network: network.name,
-    chainId: network.chainId,
+    chainId: Number(network.chainId),
     contract: "BlockchainVoting",
-    address: votingContract.address,
+    address: deployedAddress,
     deployer: (await ethers.getSigners())[0].address,
     timestamp: new Date().toISOString(),
-    transactionHash: votingContract.deployTransaction.hash
+    transactionHash: votingContract.deploymentTransaction().hash
   };
   
   const deploymentFile = `${deploymentsDir}/deployment-${network.chainId}.json`;
@@ -41,7 +43,7 @@ async function main() {
   
   console.log("📄 Deployment info saved to:", deploymentFile);
   
-  return votingContract.address;
+  return deployedAddress;
 }
 
 // We recommend this pattern to be able to use async/await everywhere

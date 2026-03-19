@@ -77,12 +77,24 @@ const RegisterPage = () => {
         }
       );
 
+      const { error: bootstrapError, data: bootstrapData } = await supabase.functions.invoke(
+        'onchain-bootstrap-voter',
+        { body: {} }
+      );
+      if (bootstrapError || bootstrapData?.error) {
+        throw new Error(
+          bootstrapError?.message ||
+            bootstrapData?.error ||
+            'Failed to complete on-chain voter bootstrap'
+        );
+      }
+
       setIsSmartAccountSetup(true);
       toast({
         title: 'Smart account ready',
-        description: `Wallet ${walletAddress} is now linked to your profile.`,
+        description: `Wallet ${walletAddress} is linked and on-chain voter setup is complete.`,
       });
-      navigate('/voting');
+      navigate('/student/blockchain-voting');
     } catch (error) {
       setSetupError(
         error instanceof Error ? error.message : 'Failed to finalize smart account setup'
@@ -137,17 +149,49 @@ const RegisterPage = () => {
       return;
     }
 
+    const missingConfig: string[] = [];
+    if (!(import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined)) {
+      missingConfig.push('VITE_ALCHEMY_API_KEY');
+    }
+    if (!(import.meta.env.VITE_ALCHEMY_ACCOUNT_POLICY_ID as string | undefined)) {
+      missingConfig.push('VITE_ALCHEMY_ACCOUNT_POLICY_ID');
+    }
+    if (missingConfig.length > 0) {
+      toast({
+        title: 'Smart account configuration missing',
+        description: `Set ${missingConfig.join(', ')} before registering students.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
 
-    const { error } = await signUp(formData.email, formData.password, {
-      full_name: formData.fullName,
-      student_id: formData.studentId,
-    });
-    
-    if (!error) {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
+    try {
+      const { error, user, session, emailConfirmationSent } = await signUp(formData.email, formData.password, {
+        full_name: formData.fullName,
+        student_id: formData.studentId,
+      });
+
+      if (error) {
+        toast({
+          title: 'Registration failed',
+          description: error.message || 'Unable to create account',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (emailConfirmationSent) {
+        toast({
+          title: 'Confirmation email sent',
+          description: 'Verify your email first, then log in to continue smart-account setup.',
+        });
+        navigate('/student/login');
+        return;
+      }
+
+      if (user && session) {
         setPendingAccountData({
           userId: user.id,
           email: formData.email,
@@ -157,28 +201,22 @@ const RegisterPage = () => {
         });
         setSetupError(null);
         setIsSmartAccountSetup(false);
-
-        toast({
-          title: 'Registration successful',
-          description: 'Enroll a passkey to finalize your smart account and start voting.',
-        });
       }
-    } else {
+
       toast({
-        title: 'Registration failed',
-        description: error.message || 'Unable to create account',
-        variant: 'destructive',
+        title: 'Email not sent (not required)',
+        description: 'Account created with immediate access. Enroll a passkey to finalize your smart account.',
       });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="voting-card w-full max-w-md animate-fade-in">
         <button
-          onClick={() => navigate('/auth/login')}
+          onClick={() => navigate('/student/login')}
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -326,7 +364,7 @@ const RegisterPage = () => {
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Already have an account?{' '}
-            <Link to="/auth/login" className="text-primary hover:underline">
+            <Link to="/student/login" className="text-primary hover:underline">
               Login here
             </Link>
           </p>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +8,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Blocks, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { createStudentAccountWithAutoWallet } from '@/features/auth/lib/studentAccount';
+import { useSmartWallet } from '@/hooks/useSmartWallet';
 import { getEmbeddedSmartAccountAddress } from '@/lib/embeddedSmartAccountProvider';
 
 const StudentRegister = () => {
   const navigate = useNavigate();
   const { signUp } = useSupabaseAuth();
   const { toast } = useToast();
+  const { state: smartWalletState, enrollPasskey } = useSmartWallet();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -23,10 +25,127 @@ const StudentRegister = () => {
     department: '',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isEnrollmentInProgress, setIsEnrollmentInProgress] = useState(false);
+  const [isSettingUpSmartAccount, setIsSettingUpSmartAccount] = useState(false);
+  const [isSmartAccountSetup, setIsSmartAccountSetup] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [pendingAccountData, setPendingAccountData] = useState<{
+    userId: string;
+    email: string;
+    fullName: string;
+    studentId: string;
+    department?: string;
+  } | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
+
+  const getMissingConfig = (): string[] => {
+    const missing: string[] = [];
+    if (!(import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined)) {
+      missing.push('VITE_ALCHEMY_API_KEY');
+    }
+    if (!(import.meta.env.VITE_ALCHEMY_ACCOUNT_POLICY_ID as string | undefined)) {
+      missing.push('VITE_ALCHEMY_ACCOUNT_POLICY_ID');
+    }
+    return missing;
+  };
+
+  const handleEnrollPasskeyClick = useCallback(async (): Promise<void> => {
+    if (!pendingAccountData) {
+      setSetupError('Complete sign-up first.');
+      return;
+    }
+
+    setIsEnrollmentInProgress(true);
+    try {
+      await enrollPasskey();
+    } finally {
+      setIsEnrollmentInProgress(false);
+    }
+  }, [enrollPasskey, pendingAccountData]);
+
+  const finalizeSmartAccountSetup = useCallback(async (): Promise<void> => {
+    if (
+      !pendingAccountData ||
+      isSmartAccountSetup ||
+      isSettingUpSmartAccount ||
+      !smartWalletState.isEnrolled
+    ) {
+      return;
+    }
+
+    setIsSettingUpSmartAccount(true);
+    setSetupError(null);
+
+    try {
+      const apiKey = import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined;
+      if (!apiKey) {
+        throw new Error('Missing VITE_ALCHEMY_API_KEY for smart account creation');
+      }
+
+      const { walletAddress } = await createStudentAccountWithAutoWallet(
+        supabase,
+        pendingAccountData,
+        {
+          getAddress: async () =>
+            getEmbeddedSmartAccountAddress({ apiKey, userId: pendingAccountData.userId }),
+        }
+      );
+
+      const { error: bootstrapError, data: bootstrapData } = await supabase.functions.invoke(
+        'onchain-bootstrap-voter',
+        {
+          body: {},
+        }
+      );
+      if (bootstrapError || bootstrapData?.error) {
+        throw new Error(
+          bootstrapError?.message ||
+            bootstrapData?.error ||
+            'Failed to complete on-chain voter bootstrap'
+        );
+      }
+
+      setIsSmartAccountSetup(true);
+      toast({
+        title: 'Smart account ready',
+        description: `Wallet ${walletAddress} is linked and on-chain voter setup is complete.`,
+      });
+      navigate('/student/blockchain-voting');
+    } catch (error) {
+      setSetupError(
+        error instanceof Error ? error.message : 'Failed to finalize smart account setup'
+      );
+    } finally {
+      setIsSettingUpSmartAccount(false);
+    }
+  }, [
+    pendingAccountData,
+    isSmartAccountSetup,
+    isSettingUpSmartAccount,
+    smartWalletState.isEnrolled,
+    toast,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (
+      pendingAccountData &&
+      smartWalletState.isEnrolled &&
+      !isSmartAccountSetup &&
+      !isSettingUpSmartAccount
+    ) {
+      void finalizeSmartAccountSetup();
+    }
+  }, [
+    pendingAccountData,
+    smartWalletState.isEnrolled,
+    isSmartAccountSetup,
+    isSettingUpSmartAccount,
+    finalizeSmartAccountSetup,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,57 +168,70 @@ const StudentRegister = () => {
       return;
     }
 
-    setIsLoading(true);
-
-    // Include all user metadata in the signup call
-    const { error } = await signUp(formData.email, formData.password, {
-      full_name: formData.fullName,
-      student_id: formData.studentId,
-      department: formData.department,
-    });
-    
-    if (!error) {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (user) {
-        const apiKey = import.meta.env.VITE_ALCHEMY_API_KEY as string | undefined;
-        if (!apiKey) {
-          throw new Error('Missing VITE_ALCHEMY_API_KEY for smart account creation');
-        }
-
-        const { walletAddress } = await createStudentAccountWithAutoWallet(
-          supabase,
-          {
-            userId: user.id,
-            email: formData.email,
-            fullName: formData.fullName,
-            studentId: formData.studentId,
-            department: formData.department,
-          },
-          {
-            getAddress: async (_email: string) =>
-              getEmbeddedSmartAccountAddress({ apiKey, userId: user.id }),
-          }
-        );
-      
-        toast({
-          title: 'Registration successful',
-          description: `Welcome to the blockchain voting system! Check your email to confirm your account. Your wallet address ${walletAddress} has been automatically assigned.`,
-        });
-      }
-      
-      // Navigate to login page instead of directly to voting
-      // The profile and role assignment will be handled by a database trigger or backend function
-      navigate('/student/login');
-    } else {
+    const missingConfig = getMissingConfig();
+    if (missingConfig.length > 0) {
       toast({
-        title: 'Registration failed',
-        description: error.message || 'Unable to create account',
+        title: 'Smart account configuration missing',
+        description: `Set ${missingConfig.join(', ')} before registering students.`,
         variant: 'destructive',
       });
+      return;
     }
-    
-    setIsLoading(false);
+
+    setIsLoading(true);
+
+    try {
+      const { error, user, session, emailConfirmationSent } = await signUp(formData.email, formData.password, {
+        full_name: formData.fullName,
+        student_id: formData.studentId,
+        department: formData.department,
+      });
+
+      if (error) {
+        toast({
+          title: 'Registration failed',
+          description: error.message || 'Unable to create account',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (emailConfirmationSent) {
+        toast({
+          title: 'Confirmation email sent',
+          description: 'Check your inbox (and spam) for the verification link before logging in.',
+        });
+        navigate('/student/login');
+        return;
+      } else {
+        toast({
+          title: 'Email not sent (not required)',
+          description: 'Account created. Enroll a passkey to complete smart account setup.',
+        });
+      }
+
+      if (!user || !session) {
+        toast({
+          title: 'Registration incomplete',
+          description: 'Sign in again to continue passkey and smart account setup.',
+          variant: 'destructive',
+        });
+        navigate('/student/login');
+        return;
+      }
+
+      setPendingAccountData({
+        userId: user.id,
+        email: formData.email,
+        fullName: formData.fullName,
+        studentId: formData.studentId,
+        department: formData.department,
+      });
+      setSetupError(null);
+      setIsSmartAccountSetup(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -130,7 +262,7 @@ const StudentRegister = () => {
               id="fullName"
               name="fullName"
               type="text"
-              placeholder="John Smith"
+              placeholder="Rjay Solamo"
               value={formData.fullName}
               onChange={handleChange}
               required
@@ -207,6 +339,46 @@ const StudentRegister = () => {
             {isLoading ? 'Creating Account...' : 'Register'}
           </Button>
         </form>
+
+        {pendingAccountData && (
+          <div className="mt-6 space-y-3 rounded-lg border border-dashed border-primary/30 bg-background/80 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-base font-semibold text-foreground">Passkey enrollment required</p>
+                <p className="text-sm text-muted-foreground">
+                  Enroll a passkey on this device so we can generate your smart account and link it to your voter profile.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleEnrollPasskeyClick}
+                disabled={smartWalletState.isEnrolled || isEnrollmentInProgress}
+              >
+                {smartWalletState.isEnrolled
+                  ? 'Passkey enrolled'
+                  : isEnrollmentInProgress
+                    ? 'Enrolling passkey...'
+                    : 'Enroll passkey'}
+              </Button>
+            </div>
+
+            {smartWalletState.isEnrolled && (
+              <p className="text-sm text-emerald-600">
+                Passkey stored. Finalizing your smart account.
+              </p>
+            )}
+
+            {isSettingUpSmartAccount && (
+              <p className="text-sm text-muted-foreground">Saving wallet address...</p>
+            )}
+
+            {setupError && (
+              <p className="text-sm text-destructive">
+                {setupError}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">

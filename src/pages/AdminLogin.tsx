@@ -19,26 +19,26 @@ const AdminLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      const success = await login('admin', { email, password });
 
-    const success = login('admin', { email, password });
-    
-    if (success) {
-      toast({
-        title: 'Login successful',
-        description: 'Welcome back, Admin',
-      });
-      navigate('/admin/dashboard');
-    } else {
+      if (success) {
+        toast({
+          title: 'Login successful',
+          description: 'Welcome back, Admin',
+        });
+        navigate('/admin/dashboard');
+        return;
+      }
+
       toast({
         title: 'Login failed',
         description: 'Invalid credentials',
         variant: 'destructive',
       });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
