@@ -1,37 +1,87 @@
 import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { mockCandidates, mockStats } from '@/api/mockData';
+import { getCandidates } from '@/api/candidates';
+import { getElectionStats } from '@/api/votes';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { TrendingUp, Users, Vote, Trophy } from 'lucide-react';
 import DashboardLayout from '@/templates/DashboardLayout';
+import { useToast } from '@/hooks/use-toast';
 
 const CandidateDashboard = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [electionStats, setElectionStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Get the candidate data for the logged-in user
   // In a real app, we would filter by user.id or a linked candidateId
   // For demo purposes, we'll try to find a candidate matching the user's name, or default to the first one
-  const candidateData = mockCandidates.find((c) => c.name === user?.name) || mockCandidates.find((c) => c.name === 'Sarah Johnson') || mockCandidates[0];
+  const candidateData = candidates.find((c) => c.name === user?.name) || candidates.find((c) => c.name === 'Sarah Johnson') || candidates[0];
   
   // Get competitors in the same position
-  const competitors = mockCandidates.filter(
-    (c) => c.position === candidateData.position && c.id !== candidateData.id
+  const competitors = candidates.filter(
+    (c) => c.position === candidateData?.position && c.id !== candidateData?.id
   );
   
-  const totalVotesInPosition = mockCandidates
-    .filter((c) => c.position === candidateData.position)
+  const totalVotesInPosition = candidates
+    .filter((c) => c.position === candidateData?.position)
     .reduce((sum, c) => sum + c.voteCount, 0);
   
-  const votePercentage = totalVotesInPosition > 0 
+  const votePercentage = totalVotesInPosition > 0 && candidateData
     ? Math.round((candidateData.voteCount / totalVotesInPosition) * 100) 
     : 0;
     
-  const maxVotes = Math.max(...mockCandidates.filter(c => c.position === candidateData.position).map((c) => c.voteCount), 0);
-  const isLeading = candidateData.voteCount >= maxVotes && candidateData.voteCount > 0;
-  const isElectionOpen = mockStats.electionStatus === 'open';
+  const maxVotes = Math.max(...candidates.filter(c => c.position === candidateData?.position).map((c) => c.voteCount), 0);
+  const isLeading = candidateData && candidateData.voteCount >= maxVotes && candidateData.voteCount > 0;
+  const isElectionOpen = electionStats?.electionStatus === 'open';
+
+  // Fetch candidates and election stats
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Fetch candidates
+        const candidatesResponse = await getCandidates();
+        if (candidatesResponse.success) {
+          setCandidates(candidatesResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: candidatesResponse.error || 'Failed to fetch candidates',
+            variant: 'destructive',
+          });
+        }
+        
+        // Fetch election stats
+        const statsResponse = await getElectionStats();
+        if (statsResponse.success) {
+          setElectionStats(statsResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: statsResponse.error || 'Failed to fetch election statistics',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch data',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [toast]);
 
   return (
     <DashboardLayout title="Candidate Dashboard">

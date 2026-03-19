@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
-import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, QrCode } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,7 +11,6 @@ import { supabase } from '@/integrations/supabase/client';
 const StaffLogin = () => {
   const navigate = useNavigate();
   const { signIn } = useSupabaseAuth();
-  const { login: mockLogin } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,8 +19,6 @@ const StaffLogin = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
-  const mvpStaffEmail = 'staff@university.edu';
-  const mvpStaffPassword = 'staff1234';
 
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
@@ -44,59 +40,38 @@ const StaffLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const trimmedEmail = email.trim();
-    
-    // Check for MVP fallback first (bypass email validation)
-    if (trimmedEmail === 'staff@university.edu' && password === 'staff1234') {
-      mockLogin('staff', { email: trimmedEmail, password });
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the attendance scanner (MVP Mode)',
-      });
-      navigate('/staff/dashboard');
-      setIsLoading(false);
-      return;
-    }
+    try {
+      const trimmedEmail = email.trim();
 
-    if (!trimmedEmail.includes('@')) {
-      toast({
-        title: 'Email required',
-        description: 'Please sign in with your staff email address.',
-        variant: 'destructive',
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    const { error } = await signIn(trimmedEmail, password);
-    if (!error) {
-      mockLogin('staff', { email: trimmedEmail, password });
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
-      if (userId) {
-        const { data: existingRole } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('role', 'staff')
-          .maybeSingle();
-
-        if (!existingRole) {
-          await supabase.from('user_roles').insert({
-            user_id: userId,
-            role: 'staff',
-          });
-        }
+      if (!trimmedEmail.includes('@')) {
+        toast({
+          title: 'Email required',
+          description: 'Please sign in with your staff email address.',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the attendance scanner',
-      });
-      navigate('/staff/dashboard');
-    } else {
-      if (trimmedEmail.toLowerCase() === mvpStaffEmail && password === mvpStaffPassword) {
-        mockLogin('staff', { email: trimmedEmail, password });
+      const { error } = await signIn(trimmedEmail, password);
+      if (!error) {
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData.user?.id;
+        if (userId) {
+          const { data: existingRole } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId)
+            .eq('role', 'staff')
+            .maybeSingle();
+
+          if (!existingRole) {
+            await supabase.from('user_roles').insert({
+              user_id: userId,
+              role: 'staff',
+            });
+          }
+        }
+
         toast({
           title: 'Login successful',
           description: 'Welcome to the attendance scanner',
@@ -109,9 +84,9 @@ const StaffLogin = () => {
           variant: 'destructive',
         });
       }
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   const handleResetPassword = async () => {

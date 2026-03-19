@@ -19,23 +19,59 @@ const StudentLoginPage = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
-    
-    if (!error) {
-      toast({
-        title: 'Login successful',
-        description: 'Welcome to the blockchain voting portal',
-      });
-      navigate('/voting');
-    } else {
+    try {
+      const { error } = await signIn(email, password);
+
+      if (!error) {
+        toast({
+          title: 'Login successful',
+          description: 'Welcome to the blockchain voting portal',
+        });
+        navigate('/student/dashboard');
+        return;
+      }
+
+      const errorMessage = error.message?.toLowerCase() || '';
+      const isInvalidCredential = errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid credentials');
+      const isNotRegisteredEmail = errorMessage.includes('not registered');
+      const isNonGmail = errorMessage.includes('registered gmail');
+
+      if (isNotRegisteredEmail) {
+        toast({
+          title: 'Account not found',
+          description: 'This Gmail is not in our records yet. Redirecting you to registration.',
+          variant: 'destructive',
+        });
+        navigate('/student/register');
+        return;
+      }
+
+      if (isNonGmail) {
+        toast({
+          title: 'Gmail required',
+          description: 'Please connect only the Gmail account you used during registration.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       toast({
         title: 'Login failed',
-        description: error.message || 'Invalid credentials',
+        description: isInvalidCredential
+          ? 'Invalid credentials or your email is not confirmed yet. Check your inbox/spam for the confirmation email.'
+          : error.message || 'Unable to sign in right now',
         variant: 'destructive',
       });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error while signing in';
+      toast({
+        title: 'Sign-in request failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
@@ -53,19 +89,19 @@ const StudentLoginPage = () => {
           <div className="w-14 h-14 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
             <Blocks className="w-7 h-7 text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Student Login</h1>
+          <h1 className="text-xl font-bold text-foreground">Connect Registered Gmail</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Secure blockchain-powered voting
+            Use the Gmail account you registered for voting
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Registered Gmail</Label>
             <Input
               id="email"
               type="email"
-              placeholder="student@university.edu"
+              placeholder="yourname@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -92,7 +128,7 @@ const StudentLoginPage = () => {
         <div className="mt-6 text-center">
           <p className="text-sm text-muted-foreground">
             Don't have an account?{' '}
-            <Link to="/auth/register" className="text-primary hover:underline">
+            <Link to="/student/register" className="text-primary hover:underline">
               Register here
             </Link>
           </p>

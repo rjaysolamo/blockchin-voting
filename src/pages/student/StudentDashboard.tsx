@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { mockCandidates, mockStats } from '@/api/mockData';
 import CandidateCard from '@/components/student/CandidateCard';
 import ElectionCountdown from '@/components/student/ElectionCountdown';
 import { Button } from '@/components/ui/button';
@@ -11,6 +10,8 @@ import DashboardLayout from '@/templates/DashboardLayout';
 import { useEvents } from '@/features/attendance/hooks/useAttendance';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import { getCandidates } from '@/api/candidates';
+import { getElectionStats } from '@/api/votes';
 import {
   Dialog,
   DialogContent,
@@ -56,12 +57,15 @@ const StudentDashboard = () => {
     candidateName: string;
     position: string;
   }>({ open: false, candidateId: '', candidateName: '', position: '' });
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [electionStats, setElectionStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const positions = [...new Set(mockCandidates.map((c) => c.position))];
-  const isElectionOpen = mockStats.electionStatus === 'open';
+  const positions = [...new Set(candidates.map((c) => c.position))];
+  const isElectionOpen = electionStats?.electionStatus === 'open';
   
-  // Election end date - in production this would come from the API
-  const electionEndDate = new Date(mockStats.endDate);
+  // Election end date - from the API
+  const electionEndDate = electionStats ? new Date(electionStats.endDate) : new Date();
 
   const handleEditSelection = (position: string) => {
     setShowBallotSummary(false);
@@ -100,6 +104,49 @@ const StudentDashboard = () => {
     }
   }, []);
 
+  // Fetch candidates and election stats
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Fetch candidates
+        const candidatesResponse = await getCandidates();
+        if (candidatesResponse.success) {
+          setCandidates(candidatesResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: candidatesResponse.error || 'Failed to fetch candidates',
+            variant: 'destructive',
+          });
+        }
+        
+        // Fetch election stats
+        const statsResponse = await getElectionStats();
+        if (statsResponse.success) {
+          setElectionStats(statsResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: statsResponse.error || 'Failed to fetch election statistics',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch data',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [toast]);
+
   useEffect(() => {
     localStorage.setItem('student-accessibility', JSON.stringify({ fontSize, highContrast }));
   }, [fontSize, highContrast]);
@@ -114,7 +161,7 @@ const StudentDashboard = () => {
     .slice(0, 4);
 
   const handleVoteClick = (candidateId: string) => {
-    const candidate = mockCandidates.find((c) => c.id === candidateId);
+    const candidate = candidates.find((c) => c.id === candidateId);
     if (candidate) {
       setConfirmDialog({
         open: true,
@@ -169,7 +216,7 @@ const StudentDashboard = () => {
   const handleDownloadReceipt = () => {
     const selected = positions.map((position) => {
       const candidateId = votedCandidates[position];
-      const candidate = mockCandidates.find((c) => c.id === candidateId);
+      const candidate = candidates.find((c) => c.id === candidateId);
       return {
         position,
         candidate: candidate?.name || 'No selection',
@@ -230,7 +277,7 @@ const StudentDashboard = () => {
                 <div className="w-full mt-6 space-y-3 text-left">
                   {positions.map((position) => {
                     const candidateId = votedCandidates[position];
-                    const candidate = mockCandidates.find((c) => c.id === candidateId);
+                    const candidate = candidates.find((c) => c.id === candidateId);
                     return (
                       <div key={position} className="flex items-center justify-between rounded-lg border p-3">
                         <div>
@@ -428,7 +475,7 @@ const StudentDashboard = () => {
                 <BallotSummary
                   votedCandidates={votedCandidates}
                   positions={positions}
-                  candidates={mockCandidates}
+                  candidates={candidates}
                   onSaveDraft={handleSaveDraft}
                   onClearDraft={handleClearDraft}
                   onReview={() => {
@@ -455,7 +502,7 @@ const StudentDashboard = () => {
                   <div className="space-y-4">
                     {positions.map((position) => {
                       const candidateId = votedCandidates[position];
-                      const candidate = mockCandidates.find((c) => c.id === candidateId);
+                      const candidate = candidates.find((c) => c.id === candidateId);
                       return (
                         <div key={position} className="flex items-center justify-between rounded-lg border p-4">
                           <div>
@@ -482,7 +529,7 @@ const StudentDashboard = () => {
               </Card>
             ) : (
               positions.map((position) => {
-                const candidates = mockCandidates.filter((c) => c.position === position);
+                const filteredCandidates = candidates.filter((c) => c.position === position);
                 const hasVotedForPosition = !!votedCandidates[position];
 
                 return (

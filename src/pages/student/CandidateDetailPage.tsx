@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { mockCandidates } from '@/api/mockData';
+import { getCandidateById } from '@/api';
+import { Candidate } from '@/@types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -18,7 +20,14 @@ import DashboardLayout from '@/templates/DashboardLayout';
 const CandidateDetailPage = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const candidate = mockCandidates.find((c) => c.id === id);
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    getCandidateById(id)
+      .then((res) => setCandidate(res.data))
+      .catch(() => setCandidate(null));
+  }, [id]);
 
   if (!candidate) {
     return (

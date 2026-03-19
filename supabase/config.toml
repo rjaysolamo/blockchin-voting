@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.verify-chain]
 verify_jwt = false
+
+[functions.onchain-admin-sync]
+verify_jwt = false
+
+[functions.onchain-bootstrap-voter]
+verify_jwt = false

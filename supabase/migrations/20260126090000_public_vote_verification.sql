@@ -11,15 +11,15 @@ RETURNS TABLE (
   voter_id UUID,
   candidate_id UUID,
   election_id UUID,
-  position TEXT,
-  timestamp TIMESTAMP WITH TIME ZONE,
+  "position" TEXT,
+  "timestamp" TIMESTAMP WITH TIME ZONE,
   nonce INTEGER
 )
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT block_number, previous_hash, current_hash, voter_id, candidate_id, election_id, position, timestamp, nonce
+  SELECT block_number, previous_hash, current_hash, voter_id, candidate_id, election_id, "position", "timestamp", nonce
   FROM public.vote_chain
   WHERE verification_code = p_code
   LIMIT 1
@@ -33,15 +33,15 @@ RETURNS TABLE (
   voter_id UUID,
   candidate_id UUID,
   election_id UUID,
-  position TEXT,
-  timestamp TIMESTAMP WITH TIME ZONE,
+  "position" TEXT,
+  "timestamp" TIMESTAMP WITH TIME ZONE,
   nonce INTEGER
 )
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT block_number, previous_hash, current_hash, voter_id, candidate_id, election_id, position, timestamp, nonce
+  SELECT block_number, previous_hash, current_hash, voter_id, candidate_id, election_id, "position", "timestamp", nonce
   FROM public.vote_chain
   WHERE election_id = p_election_id
   ORDER BY block_number ASC

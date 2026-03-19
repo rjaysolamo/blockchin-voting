@@ -1,8 +1,60 @@
+import { useState, useEffect } from 'react';
 import AdminSidebar from '@/components/admin/AdminSidebar';
-import { mockCandidates, mockStats } from '@/api/mockData';
+import { getCandidates } from '@/api/candidates';
+import { getElectionStats } from '@/api/votes';
+import { useToast } from '@/hooks/use-toast';
+import { Candidate, ElectionStats } from '@/@types';
 
 const AdminResults = () => {
-  const positions = [...new Set(mockCandidates.map((c) => c.position))];
+  const { toast } = useToast();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [electionStats, setElectionStats] = useState<ElectionStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const positions = [...new Set(candidates.map((c) => c.position))];
+
+  // Fetch candidates and election stats data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Fetch candidates
+        const candidatesResponse = await getCandidates();
+        if (candidatesResponse.success) {
+          setCandidates(candidatesResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: candidatesResponse.error || 'Failed to fetch candidates',
+            variant: 'destructive',
+          });
+        }
+        
+        // Fetch election stats
+        const statsResponse = await getElectionStats();
+        if (statsResponse.success) {
+          setElectionStats(statsResponse.data);
+        } else {
+          toast({
+            title: 'Error',
+            description: statsResponse.error || 'Failed to fetch election statistics',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch data',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [toast]);
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -18,11 +70,11 @@ const AdminResults = () => {
 
         <div className="grid gap-6">
           {positions.map((position) => {
-            const candidates = mockCandidates
+            const positionCandidates = candidates
               .filter((c) => c.position === position)
               .sort((a, b) => b.voteCount - a.voteCount);
-            const totalVotes = candidates.reduce((sum, c) => sum + c.voteCount, 0);
-            const leader = candidates[0];
+            const totalVotes = positionCandidates.reduce((sum, c) => sum + c.voteCount, 0);
+            const leader = positionCandidates[0];
 
             return (
               <div key={position} className="voting-card">
@@ -34,7 +86,7 @@ const AdminResults = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {candidates.map((candidate, index) => {
+                  {positionCandidates.map((candidate, index) => {
                     const percentage = totalVotes > 0 
                       ? Math.round((candidate.voteCount / totalVotes) * 100) 
                       : 0;
@@ -92,16 +144,16 @@ const AdminResults = () => {
           <h2 className="text-lg font-semibold mb-4">Election Summary</h2>
           <div className="grid grid-cols-3 gap-8 text-center">
             <div>
-              <p className="text-3xl font-bold">{mockStats.totalVoters}</p>
+              <p className="text-3xl font-bold">{electionStats?.totalVoters || 0}</p>
               <p className="text-sm text-muted-foreground">Eligible Voters</p>
             </div>
             <div>
-              <p className="text-3xl font-bold">{mockStats.votesCast}</p>
+              <p className="text-3xl font-bold">{electionStats?.votesCast || 0}</p>
               <p className="text-sm text-muted-foreground">Votes Cast</p>
             </div>
             <div>
               <p className="text-3xl font-bold">
-                {Math.round((mockStats.votesCast / mockStats.totalVoters) * 100)}%
+                {electionStats ? Math.round((electionStats.votesCast / electionStats.totalVoters) * 100) : 0}%
               </p>
               <p className="text-sm text-muted-foreground">Voter Turnout</p>
             </div>

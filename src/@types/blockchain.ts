@@ -72,6 +72,7 @@ export interface Profile {
   full_name: string | null;
   student_id: string | null;
   department: string | null;
+  wallet_address: string | null;
   year_level: string | null;
   avatar_url: string | null;
   created_at: string;

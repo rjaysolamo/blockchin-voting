@@ -1,17 +1,28 @@
 import { Candidate, ApiResponse } from '@/@types';
-import { mockCandidates } from './mockData';
+import { parseJsonResponse } from './http';
 
 /**
  * Get all candidates
  */
 export async function getCandidates(): Promise<ApiResponse<Candidate[]>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 300));
-
-  return {
-    success: true,
-    data: mockCandidates,
-  };
+  try {
+    const response = await fetch('/api/candidates');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await parseJsonResponse<Candidate[]>(response);
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch candidates',
+    };
+  }
 }
 
 /**
@@ -20,15 +31,24 @@ export async function getCandidates(): Promise<ApiResponse<Candidate[]>> {
 export async function getCandidatesByPosition(
   position: string
 ): Promise<ApiResponse<Candidate[]>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  const filtered = mockCandidates.filter((c) => c.position === position);
-
-  return {
-    success: true,
-    data: filtered,
-  };
+  try {
+    const response = await fetch(`/api/candidates?position=${encodeURIComponent(position)}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await parseJsonResponse<Candidate[]>(response);
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch candidates by position',
+    };
+  }
 }
 
 /**
@@ -37,15 +57,30 @@ export async function getCandidatesByPosition(
 export async function getCandidateById(
   id: string
 ): Promise<ApiResponse<Candidate | null>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  const candidate = mockCandidates.find((c) => c.id === id) || null;
-
-  return {
-    success: true,
-    data: candidate,
-  };
+  try {
+    const response = await fetch(`/api/candidates/${id}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return {
+          success: true,
+          data: null,
+        };
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await parseJsonResponse<Candidate>(response);
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch candidate',
+    };
+  }
 }
 
 /**
@@ -54,19 +89,30 @@ export async function getCandidateById(
 export async function createCandidate(
   candidate: Omit<Candidate, 'id' | 'voteCount'>
 ): Promise<ApiResponse<Candidate>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  const newCandidate: Candidate = {
-    ...candidate,
-    id: `candidate_${Date.now()}`,
-    voteCount: 0,
-  };
-
-  return {
-    success: true,
-    data: newCandidate,
-  };
+  try {
+    const response = await fetch('/api/candidates', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(candidate),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await parseJsonResponse<Candidate>(response);
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create candidate',
+    };
+  }
 }
 
 /**
@@ -76,22 +122,36 @@ export async function updateCandidate(
   id: string,
   updates: Partial<Candidate>
 ): Promise<ApiResponse<Candidate>> {
-  // Simulate API delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  const candidate = mockCandidates.find((c) => c.id === id);
-
-  if (!candidate) {
+  try {
+    const response = await fetch(`/api/candidates/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        return {
+          success: false,
+          error: 'Candidate not found',
+        };
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await parseJsonResponse<Candidate>(response);
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
     return {
       success: false,
-      error: 'Candidate not found',
+      error: error instanceof Error ? error.message : 'Failed to update candidate',
     };
   }
-
-  return {
-    success: true,
-    data: { ...candidate, ...updates },
-  };
 }
 
 /**
