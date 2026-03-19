@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
-describe("SimpleStudentVoting", function () {
+describe("BlockchainVoting", function () {
   let Voting;
   let voting;
   let admin;
@@ -34,7 +34,7 @@ describe("SimpleStudentVoting", function () {
 
   beforeEach(async function () {
     [admin, alice, bob, carol] = await ethers.getSigners();
-    Voting = await ethers.getContractFactory("contracts/BlockchainVoting.sol:SimpleStudentVoting");
+    Voting = await ethers.getContractFactory("contracts/BlockchainVoting.sol:BlockchainVoting");
     voting = await Voting.deploy();
     await voting.waitForDeployment();
   });

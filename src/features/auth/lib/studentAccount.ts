@@ -4,6 +4,7 @@ type SupabaseLike = {
   from: (table: string) => {
     // Supabase returns a thenable Postgrest builder; treat as awaitable.
     insert: (values: any) => any;
+    upsert: (values: any, options?: any) => any;
   };
 };
 
@@ -30,27 +31,22 @@ export async function createStudentAccountWithAutoWallet(
     throw new Error('Generated an invalid smart account address');
   }
 
-  const { error: profileError } = await supabaseClient.from('profiles').insert({
-    user_id: input.userId,
-    full_name: input.fullName,
-    student_id: input.studentId,
-    department: input.department ?? null,
-    wallet_address: walletAddress,
-  });
+  const { error: profileError } = await supabaseClient.from('profiles').upsert(
+    {
+      user_id: input.userId,
+      full_name: input.fullName,
+      student_id: input.studentId,
+      department: input.department ?? null,
+      wallet_address: walletAddress,
+    },
+    {
+      onConflict: 'user_id',
+    }
+  );
 
   if (profileError) {
     throw new Error(profileError?.message || 'Failed to create profile');
   }
 
-  const { error: roleError } = await supabaseClient.from('user_roles').insert({
-    user_id: input.userId,
-    role: 'student',
-  });
-
-  if (roleError) {
-    throw new Error(roleError?.message || 'Failed to assign student role');
-  }
-
   return { walletAddress };
 }
-

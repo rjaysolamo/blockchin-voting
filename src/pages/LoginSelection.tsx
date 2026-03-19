@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Shield, Users, QrCode, Search } from 'lucide-react';
+import { Shield, Users } from 'lucide-react';
 
 const LoginSelection = () => {
   const navigate = useNavigate();
@@ -34,7 +34,7 @@ Secure, transparent, and tamper-resistant elections powered by blockchain as an 
             onClick={() => navigate('/student/login')}
           >
             <Users className="w-5 h-5" />
-            Login as Student / Voter
+            Connect Registered Gmail
           </Button>
 
           <Button
@@ -47,24 +47,6 @@ Secure, transparent, and tamper-resistant elections powered by blockchain as an 
             Register as Student / Voter
           </Button>
 
-          <Button
-            size="lg"
-            variant="outline"
-            className="w-full"
-            onClick={() => navigate('/login/staff')}
-          >
-            <QrCode className="w-5 h-5" />
-            Login as Event Staff
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="w-full"
-            onClick={() => navigate('/verify-vote')}
-          >
-            <Search className="w-5 h-5" />
-            Verify a Vote
-          </Button>
         </div>
 
         <p className="mt-8 text-sm text-muted-foreground">

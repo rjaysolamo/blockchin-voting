@@ -1,4 +1,5 @@
 import { ApiResponse, Voter } from '@/@types';
+import { parseJsonResponse } from './http';
 
 /**
  * Get all voters
@@ -11,7 +12,7 @@ export async function getVoters(): Promise<ApiResponse<Voter[]>> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Voter[]>(response);
     return {
       success: true,
       data,
@@ -35,7 +36,7 @@ export async function getVoterById(id: string): Promise<ApiResponse<Voter>> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Voter>(response);
     return {
       success: true,
       data,
@@ -68,7 +69,7 @@ export async function updateVoterStatus(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Voter>(response);
     return {
       success: true,
       data,

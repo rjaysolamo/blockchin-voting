@@ -1,4 +1,5 @@
 import { Candidate, ApiResponse } from '@/@types';
+import { parseJsonResponse } from './http';
 
 /**
  * Get all candidates
@@ -11,7 +12,7 @@ export async function getCandidates(): Promise<ApiResponse<Candidate[]>> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Candidate[]>(response);
     return {
       success: true,
       data,
@@ -37,7 +38,7 @@ export async function getCandidatesByPosition(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Candidate[]>(response);
     return {
       success: true,
       data,
@@ -69,7 +70,7 @@ export async function getCandidateById(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Candidate>(response);
     return {
       success: true,
       data,
@@ -101,7 +102,7 @@ export async function createCandidate(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Candidate>(response);
     return {
       success: true,
       data,
@@ -140,7 +141,7 @@ export async function updateCandidate(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<Candidate>(response);
     return {
       success: true,
       data,

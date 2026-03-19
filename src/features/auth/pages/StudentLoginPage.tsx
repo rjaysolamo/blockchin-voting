@@ -27,12 +27,33 @@ const StudentLoginPage = () => {
           title: 'Login successful',
           description: 'Welcome to the blockchain voting portal',
         });
-        navigate('/student/blockchain-voting');
+        navigate('/student/dashboard');
         return;
       }
 
       const errorMessage = error.message?.toLowerCase() || '';
       const isInvalidCredential = errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid credentials');
+      const isNotRegisteredEmail = errorMessage.includes('not registered');
+      const isNonGmail = errorMessage.includes('registered gmail');
+
+      if (isNotRegisteredEmail) {
+        toast({
+          title: 'Account not found',
+          description: 'This Gmail is not in our records yet. Redirecting you to registration.',
+          variant: 'destructive',
+        });
+        navigate('/student/register');
+        return;
+      }
+
+      if (isNonGmail) {
+        toast({
+          title: 'Gmail required',
+          description: 'Please connect only the Gmail account you used during registration.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
       toast({
         title: 'Login failed',
@@ -68,19 +89,19 @@ const StudentLoginPage = () => {
           <div className="w-14 h-14 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
             <Blocks className="w-7 h-7 text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Student Login</h1>
+          <h1 className="text-xl font-bold text-foreground">Connect Registered Gmail</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Secure blockchain-powered voting
+            Use the Gmail account you registered for voting
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Registered Gmail</Label>
             <Input
               id="email"
               type="email"
-              placeholder="student@university.edu"
+              placeholder="yourname@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

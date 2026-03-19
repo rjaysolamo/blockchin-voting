@@ -32,6 +32,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
   }
 }
 
+const AUTH_FETCH_TIMEOUT_MS = 8000;
+
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -62,13 +64,22 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const ensureCurrentUserBootstrap = async () => {
     try {
-      const { error } = await (supabase.rpc as any)('ensure_current_user_bootstrap');
+      const callRpc = supabase.rpc as unknown as (fn: string) => Promise<{ error: Error | null }>;
+      const { error } = await callRpc('ensure_current_user_bootstrap');
       if (error) {
         console.error('Failed to ensure current user bootstrap:', error);
       }
     } catch (error) {
       console.error('Bootstrap RPC failed:', error);
     }
+  };
+
+  const hydrateUserContext = async (userId: string) => {
+    await Promise.allSettled([
+      withTimeout(ensureCurrentUserBootstrap(), AUTH_FETCH_TIMEOUT_MS, 'Bootstrap timed out'),
+      withTimeout(fetchProfile(userId), AUTH_FETCH_TIMEOUT_MS, 'Profile fetch timed out'),
+      withTimeout(fetchRoles(userId), AUTH_FETCH_TIMEOUT_MS, 'Role fetch timed out'),
+    ]);
   };
 
   useEffect(() => {
@@ -80,11 +91,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          await ensureCurrentUserBootstrap();
-          await Promise.all([
-            fetchProfile(session.user.id),
-            fetchRoles(session.user.id),
-          ]);
+          await hydrateUserContext(session.user.id);
         } else {
           setProfile(null);
           setRoles([]);
@@ -110,11 +117,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           setUser(session?.user ?? null);
 
           if (session?.user) {
-            await ensureCurrentUserBootstrap();
-            await Promise.all([
-              fetchProfile(session.user.id),
-              fetchRoles(session.user.id),
-            ]);
+            await hydrateUserContext(session.user.id);
           } else {
             setProfile(null);
             setRoles([]);
@@ -154,7 +157,26 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const normalizedEmail = email.trim().toLowerCase();
-    const { error } = await withTimeout(
+    const isGmail = normalizedEmail.endsWith('@gmail.com');
+
+    if (!isGmail) {
+      return {
+        error: new Error('Please connect using your registered Gmail account.'),
+      };
+    }
+
+    const { data: isRegisteredEmail, error: registrationCheckError } = await supabase.rpc(
+      'is_registered_email' as never,
+      { p_email: normalizedEmail } as never
+    );
+
+    if (!registrationCheckError && isRegisteredEmail === false) {
+      return {
+        error: new Error('This Gmail account is not registered yet. Please register first.'),
+      };
+    }
+
+    const { data, error } = await withTimeout(
       supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
@@ -162,6 +184,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       15000,
       'Sign-in request timed out. Please check your network and try again.'
     );
+
+    if (!error && data?.session?.user) {
+      setSession(data.session);
+      setUser(data.session.user);
+      await hydrateUserContext(data.session.user.id);
+    }
+
     return { error };
   };
 

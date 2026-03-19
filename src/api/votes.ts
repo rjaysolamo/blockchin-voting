@@ -1,4 +1,5 @@
 import { ApiResponse, ElectionStats } from '@/@types';
+import { parseJsonResponse } from './http';
 
 /**
  * Submit a vote for a candidate
@@ -20,7 +21,7 @@ export async function submitVote(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<{ voteId: string }>(response);
     return {
       success: true,
       data,
@@ -44,7 +45,7 @@ export async function getElectionStats(): Promise<ApiResponse<ElectionStats>> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<ElectionStats>(response);
     return {
       success: true,
       data,
@@ -70,7 +71,7 @@ export async function checkVoteStatus(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data = await parseJsonResponse<{ hasVoted: boolean; votedPositions: string[] }>(response);
     return {
       success: true,
       data,
