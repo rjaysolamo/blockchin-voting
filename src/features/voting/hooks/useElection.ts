@@ -11,11 +11,17 @@ export function useActiveElection() {
         .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
 
       if (error) throw error;
-      return data as Election | null;
+      const activeElections = (data || []) as Election[];
+      const now = Date.now();
+      const openElection = activeElections.find((election) => {
+        const start = new Date(election.start_date).getTime();
+        const end = new Date(election.end_date).getTime();
+        return now >= start && now <= end;
+      });
+      return openElection || activeElections[0] || null;
     },
   });
 }

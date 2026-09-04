@@ -26,6 +26,7 @@ import {
 } from '@/hooks/useAdminElection';
 import { DbCandidate } from '@/@types/blockchain';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Table,
   TableBody,
@@ -47,8 +48,56 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useWallet } from '@/hooks/useWallet';
 import { isValidEthereumAddress } from '@/lib/walletGenerator';
 
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const SUPABASE_PUBLISHABLE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+
+async function invokeOnchainAdminSyncWithFallback(payload: Record<string, unknown>) {
+  const invokeResult = await supabase.functions.invoke('onchain-admin-sync', {
+    body: payload,
+  });
+
+  if (!invokeResult.error) {
+    return invokeResult;
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    return invokeResult;
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const endpoint = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/onchain-admin-sync`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      authorization: session?.access_token
+        ? `Bearer ${session.access_token}`
+        : `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return {
+      data: json,
+      error: new Error(
+        (json as { error?: string })?.error ||
+          `onchain-admin-sync failed (${response.status})`
+      ),
+    };
+  }
+
+  return { data: json, error: null };
+}
+
 const AdminCandidates = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { state: walletState, connectWallet } = useWallet();
   const [search, setSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<string[]>([]);
@@ -67,6 +116,7 @@ const AdminCandidates = () => {
   // Dialog states
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isSyncingCandidates, setIsSyncingCandidates] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<DbCandidate | null>(null);
   
   // Form state
@@ -180,24 +230,19 @@ const AdminCandidates = () => {
           params: [signMessage, connectedAddress],
         });
 
-        const { error: syncError, data: syncData } = await supabase.functions.invoke(
-          'onchain-admin-sync',
-          {
-            body: {
-              action: 'create-candidate-direct',
-              electionId: election.id,
-              candidateName: formData.name,
-              candidatePosition: formData.position,
-              candidateDepartment: formData.department || null,
-              candidateYearLevel: formData.year_level || null,
-              candidateManifesto: formData.manifesto || null,
-              candidatePhotoUrl: formData.photo_url || null,
-              signedMessage: signMessage,
-              walletSignature: signature,
-              adminWallet: connectedAddress,
-            },
-          }
-        );
+        const { error: syncError, data: syncData } = await invokeOnchainAdminSyncWithFallback({
+          action: 'create-candidate-direct',
+          electionId: election.id,
+          candidateName: formData.name,
+          candidatePosition: formData.position,
+          candidateDepartment: formData.department || null,
+          candidateYearLevel: formData.year_level || null,
+          candidateManifesto: formData.manifesto || null,
+          candidatePhotoUrl: formData.photo_url || null,
+          signedMessage: signMessage,
+          walletSignature: signature,
+          adminWallet: connectedAddress,
+        });
         if (syncError || syncData?.error || !syncData?.success) {
           throw new Error(syncError?.message || syncData?.error || 'Failed to create candidate on-chain');
         }
@@ -208,6 +253,9 @@ const AdminCandidates = () => {
             ? `${formData.name} added and registered on-chain (tx: ${String(syncData.txHash).slice(0, 10)}...).`
             : `${formData.name} has been added and synced on-chain.`,
         });
+        queryClient.invalidateQueries({ queryKey: ['admin-candidates', election.id] });
+        queryClient.invalidateQueries({ queryKey: ['candidates', election.id] });
+        queryClient.invalidateQueries({ queryKey: ['election-stats', election.id] });
       }
       setFormDialogOpen(false);
       setFormData({
@@ -251,6 +299,102 @@ const AdminCandidates = () => {
     }
   };
 
+  const handleSyncCandidates = async () => {
+    if (!election?.id || candidates.length === 0) {
+      toast({
+        title: 'No candidates to sync',
+        description: 'Add candidates first before syncing on-chain.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSyncingCandidates(true);
+    try {
+      if (!hasValidAdminWalletConfig) {
+        throw new Error('Admin deployer wallet is not configured. Set VITE_ADMIN_DEPLOYER_WALLET and restart app.');
+      }
+
+      const connectedAddress = (
+        walletState.address ||
+        (await connectWallet(requiredAdminWallet))
+      ).toLowerCase();
+
+      if (connectedAddress !== requiredAdminWallet) {
+        throw new Error('Connected wallet does not match configured deployer wallet.');
+      }
+
+      const ethereum = (window as Window & { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+      if (!ethereum) {
+        throw new Error('No EVM wallet detected for signing.');
+      }
+
+      const signMessage = [
+        'Candidate Sync Approval',
+        `ElectionId: ${election.id}`,
+        `CandidateCount: ${candidates.length}`,
+        `Timestamp: ${new Date().toISOString()}`,
+      ].join('\n');
+
+      const signature = await ethereum.request({
+        method: 'personal_sign',
+        params: [signMessage, connectedAddress],
+      });
+
+      let syncedCount = 0;
+      let alreadySyncedCount = 0;
+      const failures: string[] = [];
+
+      for (const candidate of candidates) {
+        const { error: syncError, data: syncData } = await invokeOnchainAdminSyncWithFallback({
+          action: 'create-candidate',
+          candidateId: candidate.id,
+          signedMessage: signMessage,
+          walletSignature: signature,
+          adminWallet: connectedAddress,
+        });
+
+        if (syncError || syncData?.error || !syncData?.success) {
+          failures.push(`${candidate.name}: ${syncError?.message || syncData?.error || 'sync failed'}`);
+          continue;
+        }
+
+        if (syncData?.alreadyMapped) {
+          alreadySyncedCount += 1;
+        } else {
+          syncedCount += 1;
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['admin-candidates', election.id] });
+      queryClient.invalidateQueries({ queryKey: ['candidates', election.id] });
+      queryClient.invalidateQueries({ queryKey: ['election-stats', election.id] });
+
+      if (failures.length > 0) {
+        const firstFailure = failures[0];
+        toast({
+          title: 'Sync completed with issues',
+          description: `Synced: ${syncedCount}, Already synced: ${alreadySyncedCount}, Failed: ${failures.length}. First error: ${firstFailure}`,
+          variant: 'destructive',
+        });
+        console.error('Candidate sync failures:', failures);
+      } else {
+        toast({
+          title: 'Candidates synced',
+          description: `Synced: ${syncedCount}, Already synced: ${alreadySyncedCount}.`,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Sync failed',
+        description: error instanceof Error ? error.message : 'Failed to sync candidates on-chain.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncingCandidates(false);
+    }
+  };
+
   if (!election && !electionLoading) {
     return (
       <div className="min-h-screen flex bg-background">
@@ -277,10 +421,21 @@ const AdminCandidates = () => {
               <h1 className="text-3xl font-bold tracking-tight text-foreground">Candidates</h1>
               <p className="text-muted-foreground mt-1">Manage election candidates and their information</p>
             </div>
-            <Button onClick={handleAddCandidate} disabled={!election} size="lg" className="shadow-sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Candidate
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleSyncCandidates}
+                disabled={!election || isSyncingCandidates || candidates.length === 0}
+                size="lg"
+                className="shadow-sm"
+              >
+                {isSyncingCandidates ? 'Syncing Candidates...' : 'Sync Candidates'}
+              </Button>
+              <Button onClick={handleAddCandidate} disabled={!election} size="lg" className="shadow-sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Candidate
+              </Button>
+            </div>
           </header>
 
           <Card className="border-none shadow-md bg-card/50 backdrop-blur-sm">
@@ -492,7 +647,7 @@ const AdminCandidates = () => {
                 id="name"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Juan Dela Cruz"
+                placeholder="e.g. Rjay Solamo"
                 className="col-span-3"
               />
             </div>

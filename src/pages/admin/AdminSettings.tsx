@@ -46,6 +46,7 @@ const AdminSettings = () => {
   const [newStartDate, setNewStartDate] = useState('');
   const [newEndDate, setNewEndDate] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeployingElection, setIsDeployingElection] = useState(false);
   const [incidentReport, setIncidentReport] = useState('');
   const [safetyChecklist, setSafetyChecklist] = useState({
     rulesPublished: false,
@@ -224,6 +225,45 @@ const AdminSettings = () => {
     }
   };
 
+  const handleDeployElection = async () => {
+    if (!election?.id) return;
+
+    setIsDeployingElection(true);
+    try {
+      const { error: syncError, data: syncData } = await supabase.functions.invoke(
+        'onchain-admin-sync',
+        {
+          body: {
+            action: 'create-election',
+            electionId: election.id,
+          },
+        }
+      );
+
+      if (syncError || syncData?.error || !syncData?.success) {
+        throw new Error(syncError?.message || syncData?.error || 'Failed to deploy election on-chain');
+      }
+
+      toast({
+        title: syncData?.alreadyMapped ? 'Election already deployed' : 'Election deployed',
+        description: syncData?.alreadyMapped
+          ? 'This election is already synced on-chain.'
+          : syncData?.txHash
+            ? `Election synced on-chain (tx: ${String(syncData.txHash).slice(0, 10)}...).`
+            : 'Election synced on-chain successfully.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['active-election'] });
+    } catch (error) {
+      toast({
+        title: 'Deploy election failed',
+        description: getErrorMessage(error, 'Unable to deploy election on-chain.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeployingElection(false);
+    }
+  };
+
   const handleSubmitIncident = () => {
     if (!incidentReport.trim()) {
       toast({
@@ -338,10 +378,10 @@ const AdminSettings = () => {
                   className="w-full mt-4"
                   disabled={isCreating}
                 >
-                  {isCreating ? 'Awaiting Signature / Creating...' : 'Create Election (Sign Wallet)'}
+                  {isCreating ? 'Awaiting Signature / Deploying...' : 'Deploy Election (Sign Wallet)'}
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Creating an election requires deployer-wallet signature approval.
+                  Deploying an election requires deployer-wallet signature approval.
                 </p>
               </div>
             </div>
@@ -452,6 +492,14 @@ const AdminSettings = () => {
                 This action can be reversed by opening the election again.
               </p>
             </div>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={handleDeployElection}
+              disabled={isDeployingElection}
+            >
+              {isDeployingElection ? 'Deploying Election...' : 'Deploy Election'}
+            </Button>
           </div>
 
           <div className="voting-card">

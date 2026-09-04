@@ -152,6 +152,14 @@ export async function getEmbeddedSmartAccountClient(params: {
   userId: string;
   createIfMissing?: boolean;
 }) {
+  const normalizedApiKey = params.apiKey.trim();
+  if (!normalizedApiKey) {
+    throw new Error('Missing VITE_ALCHEMY_API_KEY');
+  }
+  if (/\s/.test(normalizedApiKey) || normalizedApiKey.includes('/')) {
+    throw new Error('Invalid Alchemy API key format. Use raw key only (no spaces, no URL).');
+  }
+
   // Keep `createIfMissing` for backward compatibility, but production flow should call
   // `enrollEmbeddedPasskey()` explicitly and then connect without creating.
   const createIfMissing = params.createIfMissing ?? false;
@@ -177,7 +185,7 @@ export async function getEmbeddedSmartAccountClient(params: {
 
   const network = getSupportedNetwork();
   const chain = getChainFromNetwork(network);
-  const transport = alchemy({ apiKey: params.apiKey });
+  const transport = alchemy({ apiKey: normalizedApiKey });
   const middlewareConfig = gasPolicyId ? alchemyGasManagerMiddleware(gasPolicyId) : undefined;
 
   const config: Record<string, unknown> = {
@@ -198,4 +206,3 @@ export async function getEmbeddedSmartAccountClient(params: {
     config as unknown as Parameters<typeof createModularAccountV2Client>[0]
   )) as SmartAccountClient;
 }
-

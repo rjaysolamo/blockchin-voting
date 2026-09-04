@@ -28,11 +28,17 @@ export function useActiveElection() {
         .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
 
       if (error) throw error;
-      return data as Election | null;
+      const activeElections = (data || []) as Election[];
+      const now = Date.now();
+      const openElection = activeElections.find((election) => {
+        const start = new Date(election.start_date).getTime();
+        const end = new Date(election.end_date).getTime();
+        return now >= start && now <= end;
+      });
+      return openElection || activeElections[0] || null;
     },
     staleTime: 60000,
     refetchOnWindowFocus: false,
@@ -67,13 +73,35 @@ export function useElectionStats(electionId: string | undefined) {
     queryFn: async () => {
       if (!electionId) return null;
       
-      // Get total registered voters
-      const { count: voterCount, error: voterError } = await supabase
-        .from('voter_registry')
-        .select('*', { count: 'exact', head: true })
-        .eq('election_id', electionId);
+      const chainName = (import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'baseSepolia').trim();
 
-      if (voterError) throw voterError;
+      // Eligible voters should reflect whitelisted wallets for the active election.
+      const { data: whitelistRows, error: whitelistError } = await supabase
+        .from('onchain_voter_whitelist' as never)
+        .select('user_id, is_whitelisted, chain, updated_at')
+        .eq('election_id', electionId)
+        .eq('is_whitelisted', true)
+        .order('updated_at', { ascending: false });
+
+      if (whitelistError) throw whitelistError;
+
+      const typedWhitelistRows = (whitelistRows as Array<{
+        user_id: string;
+        is_whitelisted: boolean;
+        chain?: string | null;
+        updated_at?: string | null;
+      }> | null) || [];
+
+      const eligibleByUser = new Map<string, { chain: string }>();
+      for (const row of typedWhitelistRows) {
+        const uid = row.user_id;
+        const rowChain = (row.chain || '').trim();
+        const existing = eligibleByUser.get(uid);
+        if (!existing || rowChain === chainName) {
+          eligibleByUser.set(uid, { chain: rowChain });
+        }
+      }
+      const eligibleVoterCount = eligibleByUser.size;
 
       // Get votes cast
       const { count: voteCount, error: voteError } = await supabase
@@ -93,14 +121,15 @@ export function useElectionStats(electionId: string | undefined) {
       if (candidateError) throw candidateError;
 
       return {
-        totalVoters: voterCount || 0,
+        totalVoters: eligibleVoterCount || 0,
         votesCast: voteCount || 0,
         totalCandidates: candidateCount || 0,
       };
     },
     enabled: !!electionId,
-    staleTime: 60000,
-    refetchOnWindowFocus: false,
+    staleTime: 5000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 }
 

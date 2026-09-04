@@ -58,6 +58,7 @@ describe('castOnChainVote integration', () => {
           getRegisteredWalletAddress: async () => ({
             walletAddress: '0x1111111111111111111111111111111111111111',
           }),
+          getWhitelistStatus: async () => ({ isWhitelisted: true }),
         },
         hasEmbeddedPasskey: async () => true,
         getEmbeddedSmartAccountClient: async () => ({
@@ -108,6 +109,7 @@ describe('castOnChainVote integration', () => {
           getRegisteredWalletAddress: async () => ({
             walletAddress: '0x1111111111111111111111111111111111111111',
           }),
+          getWhitelistStatus: async () => ({ isWhitelisted: true }),
         },
         hasEmbeddedPasskey: async () => true,
         getEmbeddedSmartAccountClient: async () => ({
@@ -157,6 +159,7 @@ describe('castOnChainVote integration', () => {
           getRegisteredWalletAddress: async () => ({
             walletAddress: '0x9999999999999999999999999999999999999999',
           }),
+          getWhitelistStatus: async () => ({ isWhitelisted: true }),
         },
         hasEmbeddedPasskey: async () => true,
         getEmbeddedSmartAccountClient: async () => ({
@@ -195,6 +198,7 @@ describe('castOnChainVote integration', () => {
           getRegisteredWalletAddress: async () => ({
             walletAddress: '0x1111111111111111111111111111111111111111',
           }),
+          getWhitelistStatus: async () => ({ isWhitelisted: true }),
         },
         hasEmbeddedPasskey: async () => true,
         getEmbeddedSmartAccountClient: async () => ({
@@ -211,5 +215,114 @@ describe('castOnChainVote integration', () => {
 
     expect(res.success).toBe(false);
     expect(res.error).toBe('Transaction sponsorship failed. Please retry in a moment.');
+  });
+
+  it('blocks vote for non-whitelisted wallet', async () => {
+    const sendUserOperation = vi.fn();
+
+    const res = await castOnChainVote(
+      {
+        candidateId: 'cand-2',
+        electionId: 'elec-1',
+        userId: USER_ID,
+        apiKey: API_KEY,
+        network: NETWORK,
+        contractAddress: CONTRACT_ADDRESS,
+        abi: BlockchainVotingABI as Abi,
+      },
+      {
+        supabaseGateway: {
+          bootstrapVoter: async () => ({}),
+          resolveOnchainVoteIds: async () => ({
+            electionOnchainId: 1n,
+            candidateOnchainId: 2n,
+          }),
+          getRegisteredWalletAddress: async () => ({
+            walletAddress: '0x1111111111111111111111111111111111111111',
+          }),
+          getWhitelistStatus: async () => ({ isWhitelisted: false }),
+        },
+        hasEmbeddedPasskey: async () => true,
+        getEmbeddedSmartAccountClient: async () => ({
+          getAddress: async () => '0x1111111111111111111111111111111111111111',
+          sendUserOperation: sendUserOperation as never,
+        }),
+        createChainPublicClient: () => ({
+          getTransactionReceipt: vi.fn(async () => ({ logs: [] })),
+        }),
+      }
+    );
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('not whitelisted');
+    expect(sendUserOperation).not.toHaveBeenCalled();
+  });
+
+  it('auto-recovers when mapping is initially missing and becomes available after bootstrap retry', async () => {
+    const bootstrapVoter = vi
+      .fn<() => Promise<{ error?: string | null }>>()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const resolveOnchainVoteIds = vi
+      .fn<
+        () => Promise<{
+          electionOnchainId: bigint | null;
+          candidateOnchainId: bigint | null;
+          error?: string | null;
+        }>
+      >()
+      .mockResolvedValueOnce({
+        electionOnchainId: null,
+        candidateOnchainId: null,
+      })
+      .mockResolvedValueOnce({
+        electionOnchainId: 1n,
+        candidateOnchainId: 2n,
+      });
+
+    const sendUserOperation = vi.fn(async () => ({
+      hash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Hex,
+    }));
+
+    const res = await castOnChainVote(
+      {
+        candidateId: 'cand-2',
+        electionId: 'elec-1',
+        userId: USER_ID,
+        apiKey: API_KEY,
+        network: NETWORK,
+        contractAddress: CONTRACT_ADDRESS,
+        abi: BlockchainVotingABI as Abi,
+      },
+      {
+        supabaseGateway: {
+          bootstrapVoter,
+          resolveOnchainVoteIds,
+          getRegisteredWalletAddress: async () => ({
+            walletAddress: '0x1111111111111111111111111111111111111111',
+          }),
+          getWhitelistStatus: async () => ({ isWhitelisted: true }),
+        },
+        hasEmbeddedPasskey: async () => true,
+        getEmbeddedSmartAccountClient: async () => ({
+          getAddress: async () => '0x1111111111111111111111111111111111111111',
+          sendUserOperation,
+          waitForUserOperationTransaction: async () => ({
+            transactionHash:
+              '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as Hex,
+            logs: [voteCastLog()],
+          }),
+        }),
+        createChainPublicClient: () => ({
+          getTransactionReceipt: vi.fn(async () => ({ logs: [] })),
+        }),
+      }
+    );
+
+    expect(res.success).toBe(true);
+    expect(bootstrapVoter).toHaveBeenCalledTimes(2);
+    expect(resolveOnchainVoteIds).toHaveBeenCalledTimes(2);
+    expect(sendUserOperation).toHaveBeenCalledTimes(1);
   });
 });

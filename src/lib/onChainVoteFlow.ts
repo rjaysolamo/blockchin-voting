@@ -19,6 +19,11 @@ type ProfileWalletLookup = {
   error?: string | null;
 };
 
+type WhitelistStatusLookup = {
+  isWhitelisted: boolean;
+  error?: string | null;
+};
+
 type SmartAccountVotingClient = SmartAccountClientLike & {
   getAddress: () => Promise<string>;
   sendUserOperation: (args: { uo: { target: Hex; data: Hex; value: bigint } }) => Promise<{ hash: Hex }>;
@@ -31,13 +36,18 @@ type TxReceiptClient = {
 };
 
 export type OnChainVoteSupabaseGateway = {
-  bootstrapVoter: (electionId: string) => Promise<{ error?: string | null }>;
+  bootstrapVoter: (args: { electionId: string; candidateId?: string }) => Promise<{ error?: string | null }>;
   resolveOnchainVoteIds: (args: {
     electionId: string;
     candidateId: string;
     chain: string;
   }) => Promise<ResolveOnchainVoteIds>;
   getRegisteredWalletAddress: (userId: string) => Promise<ProfileWalletLookup>;
+  getWhitelistStatus: (args: {
+    userId: string;
+    electionId: string;
+    chain: string;
+  }) => Promise<WhitelistStatusLookup>;
 };
 
 export type CastOnChainVoteParams = {
@@ -74,7 +84,10 @@ export async function castOnChainVote(
   deps: CastOnChainVoteDeps
 ): Promise<CastOnChainVoteResult> {
   try {
-    const bootstrap = await deps.supabaseGateway.bootstrapVoter(params.electionId);
+    const bootstrap = await deps.supabaseGateway.bootstrapVoter({
+      electionId: params.electionId,
+      candidateId: params.candidateId,
+    });
     if (bootstrap.error) {
       return { success: false, error: bootstrap.error };
     }
@@ -84,7 +97,7 @@ export async function castOnChainVote(
       return { success: false, error: 'No passkey enrolled on this device. Enroll a passkey before voting.' };
     }
 
-    const mapping = await deps.supabaseGateway.resolveOnchainVoteIds({
+    let mapping = await deps.supabaseGateway.resolveOnchainVoteIds({
       electionId: params.electionId,
       candidateId: params.candidateId,
       chain: params.network,
@@ -93,10 +106,28 @@ export async function castOnChainVote(
       return { success: false, error: mapping.error };
     }
     if (mapping.electionOnchainId === null || mapping.candidateOnchainId === null) {
-      return {
-        success: false,
-        error: 'Missing on-chain ID mapping for election/candidate. Ask admin to sync entities on-chain first.',
-      };
+      // Self-heal path: retry bootstrap + mapping once before failing.
+      const retryBootstrap = await deps.supabaseGateway.bootstrapVoter({
+        electionId: params.electionId,
+        candidateId: params.candidateId,
+      });
+      if (!retryBootstrap.error) {
+        mapping = await deps.supabaseGateway.resolveOnchainVoteIds({
+          electionId: params.electionId,
+          candidateId: params.candidateId,
+          chain: params.network,
+        });
+      }
+
+      if (mapping.error) {
+        return { success: false, error: mapping.error };
+      }
+      if (mapping.electionOnchainId === null || mapping.candidateOnchainId === null) {
+        return {
+          success: false,
+          error: 'Missing on-chain ID mapping for election/candidate. Ask admin to sync entities on-chain first.',
+        };
+      }
     }
 
     const client = await deps.getEmbeddedSmartAccountClient({
@@ -122,6 +153,21 @@ export async function castOnChainVote(
         success: false,
         error:
           'This passkey controls a different smart account than your registered voter wallet. Use your original device/passkey or ask admin to migrate your wallet.',
+      };
+    }
+
+    const whitelistStatus = await deps.supabaseGateway.getWhitelistStatus({
+      userId: params.userId,
+      electionId: params.electionId,
+      chain: params.network,
+    });
+    if (whitelistStatus.error) {
+      return { success: false, error: whitelistStatus.error };
+    }
+    if (!whitelistStatus.isWhitelisted) {
+      return {
+        success: false,
+        error: 'Your wallet is not whitelisted for this election. Ask an admin to approve your wallet first.',
       };
     }
 

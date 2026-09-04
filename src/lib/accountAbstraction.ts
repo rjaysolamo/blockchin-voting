@@ -93,6 +93,14 @@ export function mapVoteCastError(error: unknown): string {
   if (normalized.includes('paymaster') || normalized.includes('bundler')) {
     return 'Transaction sponsorship failed. Please retry in a moment.';
   }
+  if (
+    normalized.includes('invalid alchemy api key format') ||
+    normalized.includes('missing vite_alchemy_api_key') ||
+    normalized.includes('base-sepolia.g.alchemy.com/v2') ||
+    normalized.includes('bad request')
+  ) {
+    return 'Alchemy RPC rejected the request. Check VITE_ALCHEMY_API_KEY (raw key only) and Base Sepolia enablement.';
+  }
 
   return 'An unexpected error occurred';
 }

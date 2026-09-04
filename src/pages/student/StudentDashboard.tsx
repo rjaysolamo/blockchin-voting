@@ -10,8 +10,7 @@ import DashboardLayout from '@/templates/DashboardLayout';
 import { useEvents } from '@/features/attendance/hooks/useAttendance';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { getCandidates } from '@/api/candidates';
-import { getElectionStats } from '@/api/votes';
+import { useActiveElection, useElectionCandidates } from '@/hooks/useElection';
 import {
   Dialog,
   DialogContent,
@@ -38,6 +37,8 @@ const StudentDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data: events = [], isLoading: eventsLoading } = useEvents();
+  const { data: election, isLoading: electionLoading } = useActiveElection();
+  const { data: candidates = [], isLoading: candidatesLoading } = useElectionCandidates(election?.id);
   const [hasVoted, setHasVoted] = useState(false);
   const [reviewBallot, setReviewBallot] = useState(false);
   const [votedCandidates, setVotedCandidates] = useState<Record<string, string>>({});
@@ -57,16 +58,13 @@ const StudentDashboard = () => {
     candidateName: string;
     position: string;
   }>({ open: false, candidateId: '', candidateName: '', position: '' });
-  const [candidates, setCandidates] = useState<any[]>([]);
-  const [electionStats, setElectionStats] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   const positions = [...new Set(candidates.map((c) => c.position))];
-  const isElectionOpen = electionStats?.electionStatus === 'open';
+  const now = new Date();
+  const electionStartDate = election ? new Date(election.start_date) : now;
+  const electionEndDate = election ? new Date(election.end_date) : now;
+  const isElectionOpen = Boolean(election?.is_active) && now >= electionStartDate && now <= electionEndDate;
   
-  // Election end date - from the API
-  const electionEndDate = electionStats ? new Date(electionStats.endDate) : new Date();
-
   const handleEditSelection = (position: string) => {
     setShowBallotSummary(false);
     // Use setTimeout to allow state update and re-render to reveal the list
@@ -103,49 +101,6 @@ const StudentDashboard = () => {
       setDraftSavedAt(savedDraftTime);
     }
   }, []);
-
-  // Fetch candidates and election stats
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Fetch candidates
-        const candidatesResponse = await getCandidates();
-        if (candidatesResponse.success) {
-          setCandidates(candidatesResponse.data);
-        } else {
-          toast({
-            title: 'Error',
-            description: candidatesResponse.error || 'Failed to fetch candidates',
-            variant: 'destructive',
-          });
-        }
-        
-        // Fetch election stats
-        const statsResponse = await getElectionStats();
-        if (statsResponse.success) {
-          setElectionStats(statsResponse.data);
-        } else {
-          toast({
-            title: 'Error',
-            description: statsResponse.error || 'Failed to fetch election statistics',
-            variant: 'destructive',
-          });
-        }
-      } catch (error) {
-        toast({
-          title: 'Error',
-          description: 'Failed to fetch data',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [toast]);
 
   useEffect(() => {
     localStorage.setItem('student-accessibility', JSON.stringify({ fontSize, highContrast }));
@@ -244,7 +199,23 @@ const StudentDashboard = () => {
             fontSize: fontSize === 'sm' ? '14px' : fontSize === 'lg' ? '18px' : '16px',
           }}
         >
-        {!isElectionOpen ? (
+        {electionLoading || candidatesLoading ? (
+          <Card className="max-w-2xl mx-auto mt-8">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <h2 className="text-xl font-semibold mb-2">Loading Election</h2>
+              <p className="text-muted-foreground">Please wait while we load the latest election data.</p>
+            </CardContent>
+          </Card>
+        ) : !election ? (
+          <Card className="max-w-2xl mx-auto mt-8">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <h2 className="text-xl font-semibold mb-2">No Active Election</h2>
+              <p className="text-muted-foreground">
+                There is no active election right now. Please check back later.
+              </p>
+            </CardContent>
+          </Card>
+        ) : !isElectionOpen ? (
           <Card className="max-w-2xl mx-auto mt-8">
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <h2 className="text-xl font-semibold mb-2">Election Closed</h2>
@@ -544,7 +515,7 @@ const StudentDashboard = () => {
                       )}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {candidates.map((candidate) => (
+                      {filteredCandidates.map((candidate) => (
                         <CandidateCard
                           key={candidate.id}
                           candidate={candidate}

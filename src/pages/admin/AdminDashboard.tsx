@@ -15,9 +15,11 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useWallet } from '@/hooks/useWallet';
 import { isValidEthereumAddress } from '@/lib/walletGenerator';
+import { useQueryClient } from '@tanstack/react-query';
 
 const AdminDashboard = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { state: walletState, connectWallet } = useWallet();
   const { data: election, isLoading: electionLoading } = useActiveElection();
   const { data: candidates = [], isLoading: candidatesLoading } = useElectionCandidates(election?.id);
@@ -125,6 +127,9 @@ const AdminDashboard = () => {
           ? `${trimmedName} added and registered on-chain (tx: ${String(syncData.txHash).slice(0, 10)}...).`
           : `${trimmedName} has been created and registered in the contract.`,
       });
+      queryClient.invalidateQueries({ queryKey: ['admin-candidates', election.id] });
+      queryClient.invalidateQueries({ queryKey: ['candidates', election.id] });
+      queryClient.invalidateQueries({ queryKey: ['election-stats', election.id] });
       setCandidateName('');
       setCandidatePosition('');
     } catch (error) {
@@ -203,7 +208,7 @@ const AdminDashboard = () => {
                     <Label htmlFor="candidate-name">Candidate Name</Label>
                     <Input
                       id="candidate-name"
-                      placeholder="Juan Dela Cruz"
+                      placeholder="Rjay Solamo"
                       value={candidateName}
                       onChange={(event) => setCandidateName(event.target.value)}
                     />

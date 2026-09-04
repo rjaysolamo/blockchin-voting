@@ -13,7 +13,7 @@ import { AuditLogPanel } from '@/components/blockchain/AuditLogPanel';
 import { WalletAuthGuard } from '@/components/blockchain/WalletAuthGuard';
 import ElectionCountdown from '@/components/student/ElectionCountdown';
 import { Button } from '@/components/ui/button';
-import { LogOut, CheckCircle2, Vote, Shield, Blocks, GitCompare, Wallet } from 'lucide-react';
+import { LogOut, CheckCircle2, Vote, Shield, Blocks, GitCompare, Wallet, Copy, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -38,6 +38,7 @@ const BlockchainVotingDashboardWithWallet = () => {
   const [isEnrollBusy, setIsEnrollBusy] = useState(false);
   const [isOnChainReady, setIsOnChainReady] = useState(false);
   const [isCheckingOnChainReady, setIsCheckingOnChainReady] = useState(false);
+  const [showFullWalletAddress, setShowFullWalletAddress] = useState(false);
   
   const positions = useElectionPositions(candidates || []);
   const [votedPositions, setVotedPositions] = useState<Record<string, string>>({});
@@ -95,16 +96,20 @@ const BlockchainVotingDashboardWithWallet = () => {
     void (async () => {
       setIsCheckingOnChainReady(true);
       try {
-        const { data: status, error } = await supabase
+        const chainName = (import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'baseSepolia').trim();
+        const { data: statusRows, error } = await supabase
           .from('onchain_voter_whitelist' as never)
-          .select('is_whitelisted')
+          .select('is_whitelisted, chain, updated_at')
           .eq('user_id', user.id)
           .eq('election_id', election.id)
-          .eq('chain', (import.meta.env.VITE_BLOCKCHAIN_NETWORK || 'baseSepolia').trim())
-          .maybeSingle();
+          .order('updated_at', { ascending: false });
 
         if (error) throw error;
-        if (mounted) setIsOnChainReady(Boolean(status?.is_whitelisted));
+        const rows = (statusRows as Array<{ is_whitelisted?: boolean; chain?: string | null }> | null) || [];
+        const sameChain = rows.find((row) => (row.chain || '').trim() === chainName);
+        const anyWhitelisted = rows.find((row) => Boolean(row.is_whitelisted));
+        const resolved = sameChain ?? anyWhitelisted ?? null;
+        if (mounted) setIsOnChainReady(Boolean(resolved?.is_whitelisted));
       } catch {
         if (mounted) setIsOnChainReady(false);
       } finally {
@@ -151,6 +156,23 @@ const BlockchainVotingDashboardWithWallet = () => {
   const handleLogout = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const handleCopyWalletAddress = async () => {
+    if (!smartWalletState.address) return;
+    try {
+      await navigator.clipboard.writeText(smartWalletState.address);
+      toast({
+        title: 'Wallet copied',
+        description: 'Full wallet address copied to clipboard.',
+      });
+    } catch {
+      toast({
+        title: 'Copy failed',
+        description: 'Unable to copy wallet address. Please copy it manually.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const isElectionOpen = election?.is_active && new Date(election.end_date) > new Date();
@@ -203,13 +225,35 @@ const BlockchainVotingDashboardWithWallet = () => {
           
           <div className="flex items-center gap-4">
             {smartWalletState.address && (
-            <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded-full">
-              <Wallet className="w-4 h-4" />
-              <span className="text-sm">
-                {smartWalletState.address.substring(0, 6)}...{smartWalletState.address.substring(smartWalletState.address.length - 4)}
-              </span>
-            </div>
-          )}
+              <div className="flex items-center gap-2 px-3 py-1 bg-muted rounded-full">
+                <Wallet className="w-4 h-4" />
+                <span className="text-sm font-mono">
+                  {showFullWalletAddress
+                    ? smartWalletState.address
+                    : `${smartWalletState.address.substring(0, 6)}...${smartWalletState.address.substring(smartWalletState.address.length - 4)}`}
+                </span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={handleCopyWalletAddress}
+                  title="Copy wallet address"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setShowFullWalletAddress((prev) => !prev)}
+                  title={showFullWalletAddress ? 'Hide full address' : 'Show full address'}
+                >
+                  {showFullWalletAddress ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
+            )}
             <Button variant="outline" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out

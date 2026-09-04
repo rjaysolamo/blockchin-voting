@@ -1,5 +1,5 @@
 import { http, type Chain, createPublicClient } from 'viem';
-import { base, baseSepolia, sepolia } from 'viem/chains';
+import { base, baseSepolia, sepolia } from '@account-kit/infra';
 
 export type SupportedNetwork = 'baseSepolia' | 'base' | 'sepolia';
 
@@ -24,14 +24,18 @@ export function getAlchemyRpcUrl(params: { apiKey: string; network?: SupportedNe
   const network = params.network ?? getSupportedNetwork();
   const override = (import.meta.env.VITE_ALCHEMY_RPC_URL as string | undefined)?.trim();
   if (override) return override;
+  const apiKey = params.apiKey.trim();
+  if (!apiKey || /\s/.test(apiKey) || apiKey.includes('/')) {
+    throw new Error('Invalid Alchemy API key format. Use raw key only (no spaces, no URL).');
+  }
 
   switch (network) {
     case 'baseSepolia':
-      return `https://base-sepolia.g.alchemy.com/v2/${params.apiKey}`;
+      return `https://base-sepolia.g.alchemy.com/v2/${apiKey}`;
     case 'base':
-      return `https://base-mainnet.g.alchemy.com/v2/${params.apiKey}`;
+      return `https://base-mainnet.g.alchemy.com/v2/${apiKey}`;
     case 'sepolia':
-      return `https://eth-sepolia.g.alchemy.com/v2/${params.apiKey}`;
+      return `https://eth-sepolia.g.alchemy.com/v2/${apiKey}`;
   }
 }
 
@@ -41,4 +45,3 @@ export function createChainPublicClient(params: { apiKey: string; network?: Supp
   const rpcUrl = getAlchemyRpcUrl({ apiKey: params.apiKey, network });
   return createPublicClient({ chain, transport: http(rpcUrl) });
 }
-

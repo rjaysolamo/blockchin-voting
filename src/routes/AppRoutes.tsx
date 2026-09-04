@@ -9,7 +9,6 @@ import AdminCandidates from '@/pages/admin/AdminCandidates';
 import AdminVoters from '@/pages/admin/AdminVoters';
 import AdminResults from '@/pages/admin/AdminResults';
 import AdminSettings from '@/pages/admin/AdminSettings';
-import StudentDashboard from '@/pages/student/StudentDashboard';
 import CandidateDetailPage from '@/pages/student/CandidateDetailPage';
 import CandidateComparePage from '@/pages/student/CandidateComparePage';
 import StudentResults from '@/pages/student/StudentResults';
@@ -91,7 +90,7 @@ const AppRoutes = () => {
         path="/student/dashboard"
         element={
           <ProtectedRoute allowedRoles={['student']}>
-            <StudentDashboard />
+            <BlockchainVotingDashboard />
           </ProtectedRoute>
         }
       />

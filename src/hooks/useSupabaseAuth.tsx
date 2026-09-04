@@ -156,23 +156,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const normalizedEmail = email.trim().toLowerCase();
-    const isGmail = normalizedEmail.endsWith('@gmail.com');
-
-    if (!isGmail) {
-      return {
-        error: new Error('Please connect using your registered Gmail account.'),
-      };
-    }
-
-    const { data: isRegisteredEmail, error: registrationCheckError } = await supabase.rpc(
+    let isRegisteredEmail: boolean | null = null;
+    const { data: registrationData, error: registrationCheckError } = await supabase.rpc(
       'is_registered_email' as never,
       { p_email: normalizedEmail } as never
     );
-
-    if (!registrationCheckError && isRegisteredEmail === false) {
-      return {
-        error: new Error('This Gmail account is not registered yet. Please register first.'),
-      };
+    if (!registrationCheckError && typeof registrationData === 'boolean') {
+      isRegisteredEmail = registrationData;
     }
 
     const { data, error } = await withTimeout(
@@ -188,6 +178,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       setSession(data.session);
       setUser(data.session.user);
       await hydrateUserContext(data.session.user.id);
+      return { error: null };
+    }
+
+    if (error && isRegisteredEmail === false) {
+      return {
+        error: new Error('This email account is not registered yet. Please register first.'),
+      };
     }
 
     return { error };
